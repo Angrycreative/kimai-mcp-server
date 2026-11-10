@@ -1,0 +1,4 @@
+table_storage:
+    table_name: 'bundle_migration_mcp_server'
+migrations_paths:
+    'KimaiPlugin\McpServerBundle\Migrations': 'var/plugins/McpServerBundle/Migrations'

@@ -1,0 +1,41 @@
+{
+    "name": "angrycreative/kimai-mcp-server-deps",
+    "description": "Build-only project: installs the MCP SDK and its dependencies, then prefixes them with Strauss into ../../vendor-prefixed so they can never clash with Kimai's own vendor directory.",
+    "type": "project",
+    "license": "AGPL-3.0-or-later",
+    "require": {
+        "php": ">=8.2",
+        "mcp/sdk": "0.9.0",
+        "nyholm/psr7": "^1.8"
+    },
+    "require-dev": {
+        "brianhenryie/strauss": "0.31.1"
+    },
+    "config": {
+        "platform": {
+            "php": "8.2.0"
+        },
+        "sort-packages": true,
+        "allow-plugins": {
+            "php-http/discovery": false
+        }
+    },
+    "extra": {
+        "strauss": {
+            "target_directory": "../../vendor-prefixed",
+            "namespace_prefix": "KimaiPlugin\\McpServerBundle\\Vendor\\",
+            "classmap_prefix": "KimaiPluginMcpServer_",
+            "constant_prefix": "KIMAI_MCP_SERVER_",
+            "exclude_from_copy": {
+                "packages": [
+                    "symfony/deprecation-contracts"
+                ]
+            },
+            "delete_vendor_packages": false,
+            "update_call_sites": false
+        }
+    },
+    "scripts": {
+        "prefix": "strauss"
+    }
+}

@@ -1,0 +1,5 @@
+# Auto-loaded by Kimai's kernel for every plugin bundle. Under /api so Kimai's API firewall authenticates the Bearer token.
+kimai_mcp_server.api:
+    resource: '@McpServerBundle/Controller/'
+    type: attribute
+    prefix: /api
