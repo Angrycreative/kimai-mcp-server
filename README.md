@@ -26,9 +26,9 @@ Every tool only shows what the calling user may see in Kimai itself, through Kim
 | `time_summary` | Hours grouped by customer, project, activity, user, date, week, month or category, split into billable, exported and not yet invoiced | as above |
 | `uninvoiced_time` | Billable time not yet exported, per customer and project | `view_other_timesheet` |
 | `absence` | Absence per person and type in a period | `view_own_timesheet` or `view_other_timesheet` |
-| `utilisation` | Logged time against each person's work contract: absence, worked and billable hours and their shares | as above |
-| `project_budget`, `customer_budget` | A budget, used and remaining, monthly or in total, as on the entity's page in Kimai | the budget permission (global or team) |
-| `budget_overview` | Every project with a budget, closest to running out first | as above |
+| `utilisation` | Logged time against each person's work contract (or the organisation's default week, where a plugin supplies one): absence, worked and billable hours and their shares | as above |
+| `project_budget`, `customer_budget` | A budget, used and remaining, monthly or in total, as on the entity's page in Kimai; a recurring budget also shows its current interval | the budget permission (global or team) |
+| `budget_overview` | Every project with a budget, closest to running out first (a recurring budget by its current interval) | as above |
 
 Amounts appear only where you may see rates, and only per customer currency.
 
@@ -36,9 +36,16 @@ Amounts appear only where you may see rates, and only per customer currency.
 
 Kimai has no built-in notion of absence. The tools ask a `TimeCategoryProviderInterface`: by default, the projects picked under *System › Settings › MCP server › Absence projects* count as absence, and their activities are the absence types. Another plugin can replace the default by implementing the interface (for example to add internal and maintenance categories).
 
-### Adding tools from another plugin
+### Extending from another plugin
 
-Implement `KimaiPlugin\McpServerBundle\Tool\ToolInterface` in any plugin's service and it is offered to clients, subject to the permissions it declares.
+Implement one of these in any plugin's service; autoconfiguration picks it up, and for the providers the first one registered is used.
+
+| Interface | What it adds |
+| :--- | :--- |
+| `Tool\ToolInterface` | A tool, offered to clients subject to the permissions it declares |
+| `Category\TimeCategoryProviderInterface` | Time categories, replacing the absence/other default (see above) |
+| `Capacity\WorkingCapacityProviderInterface` | What someone without a work contract is expected to work. Kimai expects nothing of them, so without a provider `utilisation` shows zero contract hours and flags them `no_work_contract`; with one they are counted on its answer and flagged `default_week` |
+| `Budget\RecurringBudgetProviderInterface` | Recurring budgets (credited again every interval, as RecurringBudgetBundle does). Kimai keeps those as one running total set against all time ever logged, so the budget tools add the current interval: credit, used, remaining and whether unused credit expires |
 
 ## Call log and settings
 
