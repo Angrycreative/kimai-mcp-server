@@ -1,0 +1,9 @@
+# Loaded only when PlannerBundle is installed (see McpServerExtension).
+services:
+    _defaults:
+        autowire: true
+        autoconfigure: true
+        public: false
+
+    KimaiPlugin\McpServerBundle\Planner\:
+        resource: '../../Planner/*'

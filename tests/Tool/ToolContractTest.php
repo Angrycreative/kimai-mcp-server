@@ -27,8 +27,13 @@ class ToolContractTest extends TestCase
      */
     public static function tools(): iterable
     {
-        foreach (glob(\dirname(__DIR__, 2) . '/Tool/*Tool.php') ?: [] as $file) {
-            $class = 'KimaiPlugin\\McpServerBundle\\Tool\\' . basename($file, '.php');
+        $files = glob(\dirname(__DIR__, 2) . '/Tool/*Tool.php') ?: [];
+        // the planner tools load only where PlannerBundle is installed
+        if (class_exists('KimaiPlugin\\PlannerBundle\\Entity\\PlannedActivity')) {
+            $files = [...$files, ...(glob(\dirname(__DIR__, 2) . '/Planner/*Tool.php') ?: [])];
+        }
+        foreach ($files as $file) {
+            $class = 'KimaiPlugin\\McpServerBundle\\' . basename(\dirname($file)) . '\\' . basename($file, '.php');
             $reflection = new \ReflectionClass($class);
             if ($reflection->isAbstract() || !$reflection->implementsInterface(ToolInterface::class)) {
                 continue;

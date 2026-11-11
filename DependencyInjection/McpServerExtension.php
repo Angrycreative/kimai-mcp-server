@@ -17,6 +17,7 @@ use KimaiPlugin\McpServerBundle\Capacity\WorkingCapacityProviderInterface;
 use KimaiPlugin\McpServerBundle\Category\TimeCategoryProviderInterface;
 use KimaiPlugin\McpServerBundle\Tool\ToolInterface;
 use Symfony\Component\Config\FileLocator;
+use Symfony\Component\Config\Resource\ClassExistenceResource;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Extension\PrependExtensionInterface;
 use Symfony\Component\DependencyInjection\Loader\YamlFileLoader;
@@ -41,6 +42,13 @@ class McpServerExtension extends AbstractPluginExtension implements PrependExten
 
         $loader = new YamlFileLoader($container, new FileLocator(__DIR__ . '/../Resources/config'));
         $loader->load('services.yaml');
+
+        // The planner tools need PlannerBundle's classes, so they are registered only when it is installed.
+        $planner = 'KimaiPlugin\\PlannerBundle\\Entity\\PlannedActivity';
+        $container->addResource(new ClassExistenceResource($planner, false));
+        if (class_exists($planner)) {
+            $loader->load('planner.yaml');
+        }
     }
 
     /**

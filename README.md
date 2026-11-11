@@ -2,7 +2,7 @@
 
 An MCP server inside [Kimai](https://www.kimai.org), so Claude and other MCP clients can read logged time, budgets and planning, and make the changes you approve, with Kimai's own permissions deciding what each caller may see and do.
 
-**Status: in development.** Read tools for time, absence, utilisation and budgets, and write tools for logging time and absence and archiving customers and projects, work; planner tools come next. Not released yet.
+**Status: in development.** Read tools for time, absence, utilisation and budgets, write tools for logging time and absence and archiving customers and projects, and Weekly Planner tools work. Not released yet.
 
 ## How it works
 
@@ -42,6 +42,17 @@ Every write tool also needs `mcp_write`, and the server enforces confirmation fo
 | `log_absence` | Logs absence for a day or a range, one entry per working day at the hours the person was expected to work, on their own absence project; the type is given by name. Days already holding absence are skipped, so a repeat logs nothing twice | as above |
 | `archive_customer` | Hides a customer and its visible projects. Refuses while billable time is not yet invoiced, unless told to go ahead | `edit_customer`, `edit_project` |
 | `archive_project` | The same for one project | `edit_project` |
+
+### Weekly Planner tools
+
+Registered only when [PlannerBundle](https://github.com/happiness/PlannerBundle) is installed. They see and change exactly what the planner's own rules allow: its user list (including plugins that leave people out) and its voter, so reserved time still needs `plan_reservations_planner`.
+
+| Tool | Does | Needs |
+| :--- | :--- | :--- |
+| `planned_capacity` | Per person and day: contract hours, time off, capacity, confirmed and tentative planned hours and what is free, sorted by most free hours, as on the planner screen | `view_planner` |
+| `planned_work` | The plannings in a period, by person, customer or project, with the IDs the write tools take | `view_planner` |
+| `set_planned_hours` | Creates a planning (project or customer work, reserved time by name, or time off), or changes one's period, hours, tentative flag, comment or person | `create_planner` or `edit_planner`, plus `mcp_write` |
+| `remove_planned_work` | Clears a person's planning for a period: removes plannings inside it, shortens or splits those reaching past it. Leaves time off alone unless asked | `delete_planner`, plus `mcp_write` |
 
 ### Time categories and absence
 
