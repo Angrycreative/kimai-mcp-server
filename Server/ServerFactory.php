@@ -13,12 +13,13 @@ namespace KimaiPlugin\McpServerBundle\Server;
 
 use App\Entity\User;
 use Doctrine\DBAL\Connection;
-use KimaiPlugin\McpServerBundle\Tool\ToolInterface;
+use KimaiPlugin\McpServerBundle\CallLog\CallLog;
+use KimaiPlugin\McpServerBundle\Tool\ToolRegistry;
+use KimaiPlugin\McpServerBundle\Vendor\Mcp\Schema\ServerCapabilities;
 use KimaiPlugin\McpServerBundle\Vendor\Mcp\Schema\Tool;
 use KimaiPlugin\McpServerBundle\Vendor\Mcp\Schema\ToolAnnotations;
 use KimaiPlugin\McpServerBundle\Vendor\Mcp\Server;
 use Psr\Log\LoggerInterface;
-use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
 
 /**
  * Builds the MCP server for one request and one user, offering only the tools that user may call. Under PHP-FPM
@@ -30,18 +31,18 @@ final class ServerFactory
     public const NAME = 'kimai';
     public const VERSION = '0.1.0-dev';
 
-    /**
-     * @param iterable<ToolInterface> $tools
-     */
     public function __construct(
-        private readonly iterable $tools,
-        private readonly AuthorizationCheckerInterface $auth,
+        private readonly ToolRegistry $tools,
+        private readonly CallLog $callLog,
         private readonly Connection $connection,
         private readonly LoggerInterface $logger,
     ) {
     }
 
-    public function create(User $user): Server
+    /**
+     * @param string|null $client the client's name and version, for the call log
+     */
+    public function create(User $user, ?string $client = null): Server
     {
         $builder = Server::builder()
             ->setServerInfo(self::NAME, self::VERSION, 'Time tracking, budgets and planning in Kimai')
@@ -50,15 +51,20 @@ final class ServerFactory
                 . '(see whoami). Tools only show what this user may see in Kimai itself.'
             )
             ->setLogger(new LoggerBridge($this->logger))
+            // Tools only: no resources, prompts, logging or completions, so clients are not offered what we do not serve.
+            ->setCapabilities(new ServerCapabilities(
+                tools: true,
+                toolsListChanged: false,
+                resources: false,
+                prompts: false,
+                logging: false,
+                completions: false,
+            ))
             ->setSession(new DoctrineSessionStore($this->connection, (int) $user->getId()), gcProbability: 0)
             // Never hold a PHP-FPM worker open waiting for the client to answer a follow-up question.
             ->withoutInputRequiredShim();
 
-        foreach ($this->tools as $tool) {
-            if (!$this->isAvailable($tool)) {
-                continue;
-            }
-
+        foreach ($this->tools->available() as $tool) {
             $definition = new Tool(
                 name: $tool->getName(),
                 title: null,
@@ -71,25 +77,10 @@ final class ServerFactory
                 ),
             );
 
-            $builder->add($definition, new ToolHandlerAdapter($tool, $user));
+            $builder->add($definition, new ToolHandlerAdapter($tool, $user, $this->callLog, $client));
         }
 
         return $builder->build();
     }
 
-    private function isAvailable(ToolInterface $tool): bool
-    {
-        $permissions = $tool->getRequiredPermissions();
-        if (!$tool->isReadOnly()) {
-            $permissions[] = 'mcp_write';
-        }
-
-        foreach ($permissions as $permission) {
-            if (!$this->auth->isGranted($permission)) {
-                return false;
-            }
-        }
-
-        return true;
-    }
 }

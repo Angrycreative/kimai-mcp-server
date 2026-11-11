@@ -17,6 +17,10 @@ services:
             - '../../tools/'
             - '../../vendor-prefixed/'
 
-    KimaiPlugin\McpServerBundle\Server\ServerFactory:
+    KimaiPlugin\McpServerBundle\Tool\ToolRegistry:
         arguments:
             $tools: !tagged_iterator kimai_mcp_server.tool
+
+    KimaiPlugin\McpServerBundle\Category\TimeCategories:
+        arguments:
+            $providers: !tagged_iterator kimai_mcp_server.time_category_provider

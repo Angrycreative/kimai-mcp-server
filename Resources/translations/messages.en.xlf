@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<xliff xmlns="urn:oasis:names:tc:xliff:document:1.2" version="1.2">
+    <file source-language="en" target-language="en" datatype="plaintext" original="none">
+        <body>
+            <trans-unit id="mcp.settings.title">
+                <source>mcp.settings.title</source>
+                <target>MCP server</target>
+            </trans-unit>
+            <trans-unit id="mcp.settings.log_reads">
+                <source>mcp.settings.log_reads</source>
+                <target>Log read tools</target>
+            </trans-unit>
+            <trans-unit id="mcp.settings.log_reads_help">
+                <source>mcp.settings.log_reads_help</source>
+                <target>Record read-only tool calls in the call log too. Tools that change data are always logged.</target>
+            </trans-unit>
+            <trans-unit id="mcp.settings.retention_days">
+                <source>mcp.settings.retention_days</source>
+                <target>Call log retention (days)</target>
+            </trans-unit>
+            <trans-unit id="mcp.settings.retention_days_help">
+                <source>mcp.settings.retention_days_help</source>
+                <target>How long kimai:mcp:prune keeps call log rows.</target>
+            </trans-unit>
+            <trans-unit id="mcp.settings.absence_projects">
+                <source>mcp.settings.absence_projects</source>
+                <target>Absence projects</target>
+            </trans-unit>
+            <trans-unit id="mcp.settings.absence_projects_help">
+                <source>mcp.settings.absence_projects_help</source>
+                <target>Time on these projects counts as absence in the MCP tools. Only used when no other plugin provides time categories.</target>
+            </trans-unit>
+        </body>
+    </file>
+</xliff>

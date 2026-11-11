@@ -13,6 +13,7 @@ namespace KimaiPlugin\McpServerBundle\Controller;
 
 use App\Entity\User;
 use KimaiPlugin\McpServerBundle\McpServerBundle;
+use KimaiPlugin\McpServerBundle\Server\ClientInfo;
 use KimaiPlugin\McpServerBundle\Server\ServerFactory;
 use KimaiPlugin\McpServerBundle\Vendor\Mcp\Server\Transport\Http\Middleware\CorsMiddleware;
 use KimaiPlugin\McpServerBundle\Vendor\Mcp\Server\Transport\StreamableHttpTransport;
@@ -34,8 +35,10 @@ use Symfony\Component\Security\Http\Attribute\IsGranted;
 #[IsGranted('mcp_access')]
 final class McpController extends AbstractController
 {
-    public function __construct(private readonly ServerFactory $serverFactory)
-    {
+    public function __construct(
+        private readonly ServerFactory $serverFactory,
+        private readonly ClientInfo $clientInfo,
+    ) {
     }
 
     #[Route(path: '/mcp', name: 'kimai_mcp_server', methods: ['POST', 'GET', 'DELETE'])]
@@ -66,7 +69,8 @@ final class McpController extends AbstractController
             middleware: [new CorsMiddleware()],
         );
 
-        $response = $this->serverFactory->create($user)->run($transport);
+        $client = $this->clientInfo->describe($request, (int) $user->getId());
+        $response = $this->serverFactory->create($user, $client)->run($transport);
 
         return $this->fromPsr($response);
     }

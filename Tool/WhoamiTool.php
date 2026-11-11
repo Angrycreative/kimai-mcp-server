@@ -20,6 +20,10 @@ use App\Entity\User;
  */
 final class WhoamiTool implements ToolInterface
 {
+    public function __construct(private readonly ToolRegistry $tools)
+    {
+    }
+
     public function getName(): string
     {
         return 'whoami';
@@ -27,7 +31,8 @@ final class WhoamiTool implements ToolInterface
 
     public function getDescription(): string
     {
-        return 'Returns the Kimai user this connection acts as: name, username, email, timezone, language and roles. '
+        return 'Returns the Kimai user this connection acts as: name, username, email, timezone, language, roles and the '
+            . 'tools this user may call. '
             . 'Call it first to check the connection works, and to learn the timezone that every date and time in '
             . 'other tools is interpreted in.';
     }
@@ -58,6 +63,7 @@ final class WhoamiTool implements ToolInterface
             'language' => $user->getLanguage(),
             'roles' => array_values($user->getRoles()),
             'kimai_version' => Constants::VERSION,
+            'tools' => array_map(static fn (ToolInterface $tool): string => $tool->getName(), $this->tools->available()),
         ];
     }
 }

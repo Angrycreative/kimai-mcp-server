@@ -25,11 +25,12 @@ use KimaiPlugin\McpServerBundle\Vendor\Symfony\Component\Uid\Uuid;
 final class DoctrineSessionStore implements SessionStoreInterface
 {
     public const TABLE = 'kimai2_mcp_sessions';
+    public const DEFAULT_TTL = 3600;
 
     public function __construct(
         private readonly Connection $connection,
         private readonly int $userId,
-        private readonly int $ttl = 3600,
+        private readonly int $ttl = self::DEFAULT_TTL,
     ) {
     }
 

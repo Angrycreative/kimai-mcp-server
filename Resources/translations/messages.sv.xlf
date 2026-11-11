@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<xliff xmlns="urn:oasis:names:tc:xliff:document:1.2" version="1.2">
+    <file source-language="en" target-language="sv" datatype="plaintext" original="none">
+        <body>
+            <trans-unit id="mcp.settings.title">
+                <source>mcp.settings.title</source>
+                <target>MCP-server</target>
+            </trans-unit>
+            <trans-unit id="mcp.settings.log_reads">
+                <source>mcp.settings.log_reads</source>
+                <target>Logga läsande verktyg</target>
+            </trans-unit>
+            <trans-unit id="mcp.settings.log_reads_help">
+                <source>mcp.settings.log_reads_help</source>
+                <target>Spara även anrop till verktyg som bara läser i anropsloggen. Verktyg som ändrar data loggas alltid.</target>
+            </trans-unit>
+            <trans-unit id="mcp.settings.retention_days">
+                <source>mcp.settings.retention_days</source>
+                <target>Anropsloggens lagringstid (dagar)</target>
+            </trans-unit>
+            <trans-unit id="mcp.settings.retention_days_help">
+                <source>mcp.settings.retention_days_help</source>
+                <target>Hur länge kimai:mcp:prune behåller rader i anropsloggen.</target>
+            </trans-unit>
+            <trans-unit id="mcp.settings.absence_projects">
+                <source>mcp.settings.absence_projects</source>
+                <target>Frånvaroprojekt</target>
+            </trans-unit>
+            <trans-unit id="mcp.settings.absence_projects_help">
+                <source>mcp.settings.absence_projects_help</source>
+                <target>Tid på dessa projekt räknas som frånvaro i MCP-verktygen. Används bara när inget annat plugin anger tidskategorier.</target>
+            </trans-unit>
+        </body>
+    </file>
+</xliff>
