@@ -37,7 +37,7 @@ final class CustomerBudgetTool extends AbstractReadTool
     public function getDescription(): string
     {
         return 'A customer\'s own time and money budget (set on the customer, not the sum of its projects): how much '
-            . 'it is, used, remaining and the share used, monthly or in total. Same numbers as the customer\'s page '
+            . 'it is, used, remaining or over budget, and the share used, monthly or in total. Same numbers as the customer\'s page '
             . 'in Kimai, which counts only billable time. For project budgets use project_budget or budget_overview.';
     }
 
@@ -51,7 +51,7 @@ final class CustomerBudgetTool extends AbstractReadTool
 
     public function getRequiredPermissions(): array
     {
-        return ['budget_customer|budget_team_customer|budget_teamlead_customer'];
+        return ['budget_customer|budget_team_customer|budget_teamlead_customer|time_customer|time_team_customer|time_teamlead_customer'];
     }
 
     public function call(array $arguments, User $user): array
@@ -60,7 +60,9 @@ final class CustomerBudgetTool extends AbstractReadTool
         if (!$customer instanceof Customer) {
             throw new ToolException('No customer with that ID.');
         }
-        if (!$this->auth->isGranted('budget', $customer)) {
+        $showTime = $this->auth->isGranted('time', $customer);
+        $showMoney = $this->auth->isGranted('budget', $customer);
+        if (!$showTime && !$showMoney) {
             throw new ToolException('You may not see this customer\'s budget.');
         }
 
@@ -68,8 +70,8 @@ final class CustomerBudgetTool extends AbstractReadTool
 
         return [
             'customer' => ['id' => $customer->getId(), 'name' => $customer->getName()],
-            'has_budget' => $customer->hasBudget() || $customer->hasTimeBudget(),
+            'has_budget' => ($showMoney && $customer->hasBudget()) || ($showTime && $customer->hasTimeBudget()),
             'month' => $customer->isMonthlyBudget() ? $date->format('Y-m') : null,
-        ] + Budget::describe($this->statistics->getBudgetStatisticModel($customer, $date), $customer->getCurrency());
+        ] + Budget::describe($this->statistics->getBudgetStatisticModel($customer, $date), $customer->getCurrency(), $showTime, $showMoney);
     }
 }

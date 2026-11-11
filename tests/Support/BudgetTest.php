@@ -38,12 +38,28 @@ class BudgetTest extends TestCase
 
     public function testDescribesTimeAndMoneyIncludingAnOverrun(): void
     {
-        $out = Budget::describe($this->model(36000, 1000.0, 45000, 250.0), 'SEK');
+        $out = Budget::describe($this->model(36000, 1000.0, 45000, 250.0), 'SEK', true, true);
 
         $this->assertSame('total', $out['type']);
-        $this->assertSame(['budget_hours' => 10.0, 'used_hours' => 12.5, 'remaining_hours' => -2.5, 'used_percent' => 125.0], $out['time']);
-        $this->assertSame(['currency' => 'SEK', 'budget' => 1000.0, 'used' => 250.0, 'remaining' => 750.0, 'used_percent' => 25.0], $out['money']);
+        $this->assertSame(['budget_hours' => 10.0, 'used_hours' => 12.5, 'remaining_hours' => 0.0, 'over_budget_hours' => 2.5, 'used_percent' => 125.0], $out['time']);
+        $this->assertSame(['currency' => 'SEK', 'budget' => 1000.0, 'billable_revenue' => 250.0, 'remaining' => 750.0, 'over_budget' => 0.0, 'used_percent' => 25.0], $out['money']);
         $this->assertSame(13.5, $out['logged_hours']);
+    }
+
+    public function testTimeAndMoneyEachNeedTheirOwnPermission(): void
+    {
+        $model = $this->model(36000, 1000.0, 45000, 250.0);
+
+        $timeOnly = Budget::describe($model, 'SEK', true, false);
+        $this->assertArrayHasKey('time', $timeOnly);
+        $this->assertArrayNotHasKey('money', $timeOnly);
+
+        $moneyOnly = Budget::describe($model, 'SEK', false, true);
+        $this->assertArrayHasKey('money', $moneyOnly);
+        $this->assertArrayNotHasKey('time', $moneyOnly);
+        $this->assertArrayNotHasKey('logged_hours', $moneyOnly);
+
+        $this->assertSame(0.75, Budget::remainingShare($model, false, true));
     }
 
     public function testRemainingShareIsTheTightestBudget(): void

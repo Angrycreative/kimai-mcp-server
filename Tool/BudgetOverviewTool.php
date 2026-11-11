@@ -41,7 +41,7 @@ final class BudgetOverviewTool extends AbstractReadTool
     public function getDescription(): string
     {
         return 'Every visible project with a time or money budget whose budget you may see, sorted by how little is '
-            . 'left (closest to running out first), with budget, used, remaining and share used. Answers "which '
+            . 'left (closest to running out first), with budget, used, remaining or over budget, and share used. Time and money budgets each appear only where Kimai lets you see them. Answers "which '
             . 'projects are close to their budget?" in one call. Monthly budgets are for the month of "date".';
     }
 
@@ -57,7 +57,7 @@ final class BudgetOverviewTool extends AbstractReadTool
 
     public function getRequiredPermissions(): array
     {
-        return ['budget_project|budget_team_project|budget_teamlead_project'];
+        return ['budget_project|budget_team_project|budget_teamlead_project|time_project|time_team_project|time_teamlead_project'];
     }
 
     public function call(array $arguments, User $user): array
@@ -75,7 +75,8 @@ final class BudgetOverviewTool extends AbstractReadTool
 
         $withBudget = array_values(array_filter(
             $this->projects->getProjectsForQuery($query),
-            fn (Project $project): bool => ($project->hasBudget() || $project->hasTimeBudget()) && $this->auth->isGranted('budget', $project)
+            fn (Project $project): bool => ($project->hasBudget() && $this->auth->isGranted('budget', $project))
+                || ($project->hasTimeBudget() && $this->auth->isGranted('time', $project))
         ));
         if ($withBudget === []) {
             return ['projects' => [], 'count' => 0, 'total' => 0];
@@ -92,7 +93,9 @@ final class BudgetOverviewTool extends AbstractReadTool
             if ($model === null) {
                 continue;
             }
-            $share = Budget::remainingShare($model);
+            $showTime = $this->auth->isGranted('time', $project);
+            $showMoney = $this->auth->isGranted('budget', $project);
+            $share = Budget::remainingShare($model, $showTime, $showMoney);
             if ($max !== null && $share > $max) {
                 continue;
             }
@@ -101,7 +104,7 @@ final class BudgetOverviewTool extends AbstractReadTool
                 'project' => ['id' => $project->getId(), 'name' => $project->getName()],
                 'customer' => ['id' => $customer?->getId(), 'name' => $customer?->getName()],
                 'remaining_percent' => round($share * 100, 1),
-            ] + Budget::describe($model, $customer?->getCurrency())];
+            ] + Budget::describe($model, $customer?->getCurrency(), $showTime, $showMoney)];
         }
 
         usort($rows, static fn (array $a, array $b): int => $a['share'] <=> $b['share']);

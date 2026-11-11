@@ -36,8 +36,8 @@ final class ProjectBudgetTool extends AbstractReadTool
 
     public function getDescription(): string
     {
-        return 'A project\'s time and money budget: how much it is, how much is used, what remains and the share '
-            . 'used. For a monthly budget, the figures are for the month of "date" (default: this month), plus the '
+        return 'A project\'s time and money budget: how much it is, how much is used, what remains (or how much it '
+            . 'is over budget) and the share used. Time and money each appear only where Kimai lets you see them. For a monthly budget, the figures are for the month of "date" (default: this month), plus the '
             . 'all-time totals. Same numbers as the project\'s page in Kimai, which counts only billable time.';
     }
 
@@ -51,7 +51,7 @@ final class ProjectBudgetTool extends AbstractReadTool
 
     public function getRequiredPermissions(): array
     {
-        return ['budget_project|budget_team_project|budget_teamlead_project'];
+        return ['budget_project|budget_team_project|budget_teamlead_project|time_project|time_team_project|time_teamlead_project'];
     }
 
     public function call(array $arguments, User $user): array
@@ -60,7 +60,9 @@ final class ProjectBudgetTool extends AbstractReadTool
         if (!$project instanceof Project) {
             throw new ToolException('No project with that ID.');
         }
-        if (!$this->auth->isGranted('budget', $project)) {
+        $showTime = $this->auth->isGranted('time', $project);
+        $showMoney = $this->auth->isGranted('budget', $project);
+        if (!$showTime && !$showMoney) {
             throw new ToolException('You may not see this project\'s budget.');
         }
 
@@ -70,8 +72,8 @@ final class ProjectBudgetTool extends AbstractReadTool
         return [
             'project' => ['id' => $project->getId(), 'name' => $project->getName()],
             'customer' => ['id' => $customer?->getId(), 'name' => $customer?->getName()],
-            'has_budget' => $project->hasBudget() || $project->hasTimeBudget(),
+            'has_budget' => ($showMoney && $project->hasBudget()) || ($showTime && $project->hasTimeBudget()),
             'month' => $project->isMonthlyBudget() ? $date->format('Y-m') : null,
-        ] + Budget::describe($this->statistics->getBudgetStatisticModel($project, $date), $customer?->getCurrency());
+        ] + Budget::describe($this->statistics->getBudgetStatisticModel($project, $date), $customer?->getCurrency(), $showTime, $showMoney);
     }
 }
