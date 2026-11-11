@@ -107,7 +107,7 @@ final class CallLog
             $qb->andWhere('l.is_write = 1');
         }
 
-        /** @var list<array<string, mixed>> */
+        /* @var list<array<string, mixed>> */
         return $qb->executeQuery()->fetchAllAssociative();
     }
 }

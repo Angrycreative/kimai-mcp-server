@@ -14,8 +14,8 @@ namespace KimaiPlugin\McpServerBundle\Tool;
 use App\Entity\User;
 use KimaiPlugin\McpServerBundle\Category\TimeCategories;
 use KimaiPlugin\McpServerBundle\Support\Schema;
-use KimaiPlugin\McpServerBundle\Support\TimeSummary;
 use KimaiPlugin\McpServerBundle\Support\TimesheetScope;
+use KimaiPlugin\McpServerBundle\Support\TimeSummary;
 
 final class AbsenceTool extends AbstractReadTool
 {
@@ -65,24 +65,29 @@ final class AbsenceTool extends AbstractReadTool
         unset($arguments['customer_ids'], $arguments['billable'], $arguments['exported'], $arguments['search']);
         $query = $this->scope->query($arguments, $user);
 
+        /** @var array<int, array{user: array{id: ?int, name: ?string}, hours: float, types: list<array<string, mixed>>}> $people */
         $people = [];
-        foreach ($this->summary->summarise($query, ['user', 'activity'], false)['rows'] as $row) {
-            $id = (string) ($row['user']['id'] ?? '');
-            $people[$id] ??= ['user' => $row['user'], 'hours' => 0.0, 'types' => []];
-            $people[$id]['hours'] = round($people[$id]['hours'] + $row['hours'], 2);
+        foreach ($this->summary->rows($query, ['user', 'activity']) as $row) {
+            $id = (int) $row->userId;
+            $people[$id] ??= ['user' => ['id' => $row->userId, 'name' => $row->userName], 'hours' => 0.0, 'types' => []];
+            $people[$id]['hours'] = round($people[$id]['hours'] + $row->hours(), 2);
             $people[$id]['types'][] = [
-                'type' => $row['activity']['name'],
-                'activity_id' => $row['activity']['id'],
-                'hours' => $row['hours'],
-                'days' => $row['days'],
-                'first_date' => $row['first_date'],
-                'last_date' => $row['last_date'],
+                'type' => $row->activityName,
+                'activity_id' => $row->activityId,
+                'hours' => $row->hours(),
+                'days' => $row->days,
+                'first_date' => $row->first,
+                'last_date' => $row->last,
             ];
         }
 
+        foreach ($people as &$person) {
+            usort($person['types'], static fn (array $a, array $b): int => $b['hours'] <=> $a['hours']);
+        }
+        unset($person);
         usort($people, static fn (array $a, array $b): int => $b['hours'] <=> $a['hours']);
 
-        $out = ['people' => array_values($people), 'total_hours' => round(array_sum(array_column($people, 'hours')), 2)];
+        $out = ['people' => $people, 'total_hours' => round(array_sum(array_column($people, 'hours')), 2)];
         if (!$this->scope->seesOthers()) {
             $out['note'] = 'Only your own absence: your Kimai role cannot see other people\'s timesheets.';
         }

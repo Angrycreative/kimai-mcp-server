@@ -1,0 +1,12 @@
+{
+    "name": "angrycreative/kimai-mcp-server-tools",
+    "description": "Development tools for the bundle, kept apart so its own composer.json stays a plain Kimai plugin manifest",
+    "type": "project",
+    "license": "AGPL-3.0-or-later",
+    "require": {
+        "phpunit/phpunit": "^10.5"
+    },
+    "config": {
+        "sort-packages": true
+    }
+}

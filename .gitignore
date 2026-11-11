@@ -3,3 +3,5 @@
 /.phpunit.cache/
 .env
 .env.*
+/tools/phpunit/composer.lock
+/.php-cs-fixer.cache

@@ -116,6 +116,23 @@ final class Args
     }
 
     /**
+     * "from" and "to", both inclusive, both required.
+     *
+     * @param array<string, mixed> $args
+     * @return array{0: \DateTimeImmutable, 1: \DateTimeImmutable}
+     * @throws ToolException
+     */
+    public static function requiredRange(array $args, User $user): array
+    {
+        [$from, $to] = self::range($args, $user);
+        if ($from === null || $to === null) {
+            throw new ToolException('Give both "from" and "to" (YYYY-MM-DD, both inclusive).');
+        }
+
+        return [$from, $to];
+    }
+
+    /**
      * "from" and "to", both inclusive. With $required, both must be given; otherwise either may be left out.
      *
      * @param array<string, mixed> $args

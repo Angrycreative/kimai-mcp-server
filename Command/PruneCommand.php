@@ -11,10 +11,10 @@ declare(strict_types=1);
 
 namespace KimaiPlugin\McpServerBundle\Command;
 
+use Doctrine\DBAL\Connection;
 use KimaiPlugin\McpServerBundle\CallLog\CallLog;
 use KimaiPlugin\McpServerBundle\Server\DoctrineSessionStore;
 use KimaiPlugin\McpServerBundle\Settings\McpSettings;
-use Doctrine\DBAL\Connection;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -45,7 +45,7 @@ final class PruneCommand extends Command
             [time() - DoctrineSessionStore::DEFAULT_TTL]
         );
 
-        (new SymfonyStyle($input, $output))->success(sprintf(
+        (new SymfonyStyle($input, $output))->success(\sprintf(
             'Removed %d call log rows older than %d days and %d expired sessions.',
             $calls,
             $days,

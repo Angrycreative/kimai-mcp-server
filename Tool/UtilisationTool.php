@@ -21,8 +21,8 @@ use KimaiPlugin\McpServerBundle\Category\TimeCategoryProviderInterface;
 use KimaiPlugin\McpServerBundle\Support\Args;
 use KimaiPlugin\McpServerBundle\Support\Format;
 use KimaiPlugin\McpServerBundle\Support\Schema;
-use KimaiPlugin\McpServerBundle\Support\TimeSummary;
 use KimaiPlugin\McpServerBundle\Support\TimesheetScope;
+use KimaiPlugin\McpServerBundle\Support\TimeSummary;
 
 final class UtilisationTool extends AbstractReadTool
 {
@@ -66,7 +66,7 @@ final class UtilisationTool extends AbstractReadTool
 
     public function call(array $arguments, User $user): array
     {
-        [$from, $to] = Args::range($arguments, $user, true);
+        [$from, $to] = Args::requiredRange($arguments, $user);
         $today = (new \DateTimeImmutable('today', new \DateTimeZone($user->getTimezone())))->setTime(23, 59, 59);
         $capped = $to > $today;
         if ($capped) {
@@ -86,15 +86,16 @@ final class UtilisationTool extends AbstractReadTool
         $arguments['user_ids'] = array_map(static fn (User $person): int => (int) $person->getId(), $people);
         unset($arguments['customer_ids'], $arguments['project_ids'], $arguments['activity_ids'], $arguments['billable'], $arguments['exported'], $arguments['search']);
 
+        /** @var array<int, array{absence: float, worked: float, billable: float}> $logged */
         $logged = [];
-        foreach ($this->summary->summarise($this->scope->query($arguments, $user), ['user', 'category'], false)['rows'] as $row) {
-            $id = (int) $row['user']['id'];
+        foreach ($this->summary->rows($this->scope->query($arguments, $user), ['user', 'category']) as $row) {
+            $id = (int) $row->userId;
             $logged[$id] ??= ['absence' => 0.0, 'worked' => 0.0, 'billable' => 0.0];
-            if ($row['category']['key'] === TimeCategoryProviderInterface::ABSENCE) {
-                $logged[$id]['absence'] += $row['hours'];
+            if ($row->category === TimeCategoryProviderInterface::ABSENCE) {
+                $logged[$id]['absence'] += $row->hours();
             } else {
-                $logged[$id]['worked'] += $row['hours'];
-                $logged[$id]['billable'] += $row['billable_hours'];
+                $logged[$id]['worked'] += $row->hours();
+                $logged[$id]['billable'] += $row->billableHours();
             }
         }
 

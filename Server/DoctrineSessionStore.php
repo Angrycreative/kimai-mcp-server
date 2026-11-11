@@ -12,6 +12,7 @@ declare(strict_types=1);
 namespace KimaiPlugin\McpServerBundle\Server;
 
 use Doctrine\DBAL\Connection;
+use KimaiPlugin\McpServerBundle\Support\Value;
 use KimaiPlugin\McpServerBundle\Vendor\Mcp\Server\Session\SessionStoreInterface;
 use KimaiPlugin\McpServerBundle\Vendor\Symfony\Component\Uid\Uuid;
 
@@ -46,17 +47,17 @@ final class DoctrineSessionStore implements SessionStoreInterface
             [$id->toRfc4122()]
         );
 
-        if ($row === false || (int) $row['user_id'] !== $this->userId) {
+        if ($row === false || Value::int($row['user_id']) !== $this->userId) {
             return false;
         }
 
-        if (time() - (int) $row['updated_at'] > $this->ttl) {
+        if (time() - Value::int($row['updated_at']) > $this->ttl) {
             $this->destroy($id);
 
             return false;
         }
 
-        return (string) $row['data'];
+        return Value::string($row['data']);
     }
 
     public function write(Uuid $id, string $data): bool
@@ -76,7 +77,7 @@ final class DoctrineSessionStore implements SessionStoreInterface
         }
 
         // Never let one user overwrite another user's session.
-        if ((int) $owner !== $this->userId) {
+        if (Value::int($owner) !== $this->userId) {
             return false;
         }
 

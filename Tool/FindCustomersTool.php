@@ -12,6 +12,7 @@ declare(strict_types=1);
 namespace KimaiPlugin\McpServerBundle\Tool;
 
 use App\Entity\Customer;
+use App\Entity\Team;
 use App\Entity\User;
 use App\Repository\CustomerRepository;
 use App\Repository\Query\CustomerQuery;
@@ -82,6 +83,21 @@ final class FindCustomersTool extends AbstractReadTool
     }
 
     /**
+     * @return list<string>
+     */
+    private function teamNames(Customer $customer): array
+    {
+        $names = [];
+        foreach ($customer->getTeams() as $team) {
+            if ($team instanceof Team) {
+                $names[] = (string) $team->getName();
+            }
+        }
+
+        return $names;
+    }
+
+    /**
      * @return array<string, mixed>
      */
     private function describe(Customer $customer): array
@@ -95,7 +111,7 @@ final class FindCustomersTool extends AbstractReadTool
             'country' => $customer->getCountry(),
             'visible' => $customer->isVisible(),
             'billable' => $customer->isBillable(),
-            'teams' => array_values(array_map(static fn ($team): ?string => $team->getName(), $customer->getTeams()->toArray())),
+            'teams' => $this->teamNames($customer),
         ];
 
         if ($this->auth->isGranted('details', $customer)) {

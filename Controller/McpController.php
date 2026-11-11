@@ -80,7 +80,7 @@ final class McpController extends AbstractController
         $psr = $factory->createServerRequest($request->getMethod(), $request->getUri(), $request->server->all());
 
         foreach ($request->headers->all() as $name => $values) {
-            $psr = $psr->withHeader($name, $values);
+            $psr = $psr->withHeader($name, array_values(array_filter($values, 'is_string')));
         }
 
         return $psr

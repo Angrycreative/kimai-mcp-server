@@ -56,7 +56,7 @@ final class ToolHandlerAdapter implements ToolHandlerInterface
 
         $changed = [];
         if (\is_array($result[self::CHANGED] ?? null)) {
-            $changed = array_values(array_map('strval', $result[self::CHANGED]));
+            $changed = array_values(array_map(static fn (mixed $ref): string => \is_scalar($ref) ? (string) $ref : '', $result[self::CHANGED]));
             unset($result[self::CHANGED]);
         }
         $this->log($arguments, $started, null, $changed);

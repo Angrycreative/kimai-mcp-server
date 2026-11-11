@@ -14,8 +14,8 @@ namespace KimaiPlugin\McpServerBundle\Tool;
 use App\Entity\User;
 use KimaiPlugin\McpServerBundle\Support\Args;
 use KimaiPlugin\McpServerBundle\Support\Schema;
-use KimaiPlugin\McpServerBundle\Support\TimeSummary;
 use KimaiPlugin\McpServerBundle\Support\TimesheetScope;
+use KimaiPlugin\McpServerBundle\Support\TimeSummary;
 
 final class TimeSummaryTool extends AbstractReadTool
 {
@@ -55,7 +55,7 @@ final class TimeSummaryTool extends AbstractReadTool
 
     public function call(array $arguments, User $user): array
     {
-        $groupBy = array_values(array_filter($arguments['group_by'] ?? [], 'is_string'));
+        $groupBy = \is_array($arguments['group_by'] ?? null) ? array_values(array_filter($arguments['group_by'], 'is_string')) : [];
         $query = $this->scope->query($arguments, $user);
         $result = $this->summary->summarise($query, $groupBy, $this->scope->mayViewRates($this->scope->seesOthers()));
 

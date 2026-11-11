@@ -15,6 +15,7 @@ use App\Configuration\SystemConfiguration;
 use App\Entity\Project;
 use App\Repository\ProjectRepository;
 use KimaiPlugin\McpServerBundle\Settings\McpSettings;
+use KimaiPlugin\McpServerBundle\Support\Value;
 use Symfony\Component\Form\AbstractType;
 use Symfony\Component\Form\CallbackTransformer;
 use Symfony\Component\Form\Extension\Core\Type\ChoiceType;
@@ -33,7 +34,7 @@ final class ProjectIdListType extends AbstractType
 {
     public const OPTION_SETTING_KEY = 'setting_key';
 
-    /** @var array<string, array<string, array{label: string, group: string}>> */
+    /** @var array<string, array<int|string, array{label: string, group: string}>> PHP turns the numeric ID keys into integers */
     private array $entries = [];
 
     public function __construct(
@@ -44,15 +45,16 @@ final class ProjectIdListType extends AbstractType
 
     public function buildForm(FormBuilderInterface $builder, array $options): void
     {
-        $known = array_fill_keys(array_map('strval', $options['choices']), true);
+        $choices = \is_array($options['choices']) ? $options['choices'] : [];
+        $known = array_fill_keys(array_map(static fn (mixed $id): string => Value::string($id), $choices), true);
 
         $builder->addModelTransformer(new CallbackTransformer(
             static fn ($stored): array => array_values(array_filter(
-                array_map('strval', McpSettings::parseIds($stored)),
+                array_map(static fn (int $id): string => (string) $id, McpSettings::parseIds($stored)),
                 static fn (string $id): bool => isset($known[$id])
             )),
             // null removes the configuration row
-            static fn ($ids): ?string => \is_array($ids) && $ids !== [] ? implode(',', array_map('strval', $ids)) : null
+            static fn ($ids): ?string => \is_array($ids) && $ids !== [] ? implode(',', array_map(static fn (mixed $id): string => Value::string($id), $ids)) : null
         ));
     }
 
@@ -64,14 +66,14 @@ final class ProjectIdListType extends AbstractType
             self::OPTION_SETTING_KEY => null,
             'multiple' => true,
             'choice_translation_domain' => false,
-            'choices' => fn (Options $options): array => array_keys($this->entries($options[self::OPTION_SETTING_KEY])),
+            'choices' => fn (Options $options): array => array_map(static fn (int|string $id): string => (string) $id, array_keys($this->entries(Value::stringOrNull($options[self::OPTION_SETTING_KEY])))),
             'choice_label' => function (Options $options): callable {
-                $entries = $this->entries($options[self::OPTION_SETTING_KEY]);
+                $entries = $this->entries(Value::stringOrNull($options[self::OPTION_SETTING_KEY]));
 
                 return static fn (string $id): string => $entries[$id]['label'] ?? $id;
             },
             'group_by' => function (Options $options): callable {
-                $entries = $this->entries($options[self::OPTION_SETTING_KEY]);
+                $entries = $this->entries(Value::stringOrNull($options[self::OPTION_SETTING_KEY]));
 
                 return static fn (string $id): ?string => $entries[$id]['group'] ?? null;
             },
@@ -84,7 +86,7 @@ final class ProjectIdListType extends AbstractType
     }
 
     /**
-     * @return array<string, array{label: string, group: string}>
+     * @return array<int|string, array{label: string, group: string}>
      */
     private function entries(?string $settingKey): array
     {

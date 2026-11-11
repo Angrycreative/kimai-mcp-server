@@ -47,7 +47,7 @@ final class ClientInfo
     }
 
     /**
-     * @return array<string, mixed>|null
+     * @return array<mixed>|null
      */
     private function fromSession(string $sessionId, int $userId): ?array
     {

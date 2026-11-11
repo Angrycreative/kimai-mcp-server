@@ -14,8 +14,8 @@ namespace KimaiPlugin\McpServerBundle\Tool;
 use App\Entity\User;
 use KimaiPlugin\McpServerBundle\Support\Args;
 use KimaiPlugin\McpServerBundle\Support\Schema;
-use KimaiPlugin\McpServerBundle\Support\TimeSummary;
 use KimaiPlugin\McpServerBundle\Support\TimesheetScope;
+use KimaiPlugin\McpServerBundle\Support\TimeSummary;
 
 final class UninvoicedTimeTool extends AbstractReadTool
 {

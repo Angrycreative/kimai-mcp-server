@@ -12,6 +12,7 @@ declare(strict_types=1);
 namespace KimaiPlugin\McpServerBundle\Command;
 
 use KimaiPlugin\McpServerBundle\CallLog\CallLog;
+use KimaiPlugin\McpServerBundle\Support\Value;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -45,7 +46,7 @@ final class LogCommand extends Command
         $user = $input->getOption('user');
 
         $rows = $this->callLog->latest(
-            (int) $input->getOption('limit'),
+            Value::int($input->getOption('limit'), 25),
             \is_string($tool) ? $tool : null,
             \is_string($user) && ctype_digit($user) ? (int) $user : null,
             (bool) $input->getOption('writes'),
@@ -54,13 +55,13 @@ final class LogCommand extends Command
         $table = [];
         foreach ($rows as $row) {
             $table[] = [
-                $row['created_at'],
-                $row['username'] ?? ('#' . $row['user_id']),
-                $row['client'] ?? '',
-                $row['tool'] . ((bool) $row['is_write'] ? ' (write)' : ''),
-                mb_strimwidth((string) $row['arguments'], 0, 60, '…'),
-                (bool) $row['success'] ? 'ok' : 'error: ' . mb_strimwidth((string) $row['error'], 0, 40, '…'),
-                $row['duration_ms'] . ' ms',
+                Value::string($row['created_at'] ?? null),
+                Value::stringOrNull($row['username'] ?? null) ?? ('#' . Value::string($row['user_id'] ?? null)),
+                Value::string($row['client'] ?? null),
+                Value::string($row['tool'] ?? null) . (Value::int($row['is_write'] ?? 0) === 1 ? ' (write)' : ''),
+                mb_strimwidth(Value::string($row['arguments'] ?? null), 0, 60, '…'),
+                Value::int($row['success'] ?? 0) === 1 ? 'ok' : 'error: ' . mb_strimwidth(Value::string($row['error'] ?? null), 0, 40, '…'),
+                Value::int($row['duration_ms'] ?? 0) . ' ms',
             ];
         }
 
