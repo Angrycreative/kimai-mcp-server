@@ -1,0 +1,97 @@
+<?php
+
+/*
+ * This file is part of the official PHP MCP SDK.
+ *
+ * A collaboration between Symfony and the PHP Foundation.
+ *
+ * For the full copyright and license information, please view the LICENSE
+ * file that was distributed with this source code.
+ */
+
+namespace KimaiPlugin\McpServerBundle\Vendor\Mcp\Server\Handler\Request;
+
+use KimaiPlugin\McpServerBundle\Vendor\Mcp\Schema\Enum\ProtocolVersion;
+use KimaiPlugin\McpServerBundle\Vendor\Mcp\Schema\Implementation;
+use KimaiPlugin\McpServerBundle\Vendor\Mcp\Schema\JsonRpc\Request;
+use KimaiPlugin\McpServerBundle\Vendor\Mcp\Schema\JsonRpc\Response;
+use KimaiPlugin\McpServerBundle\Vendor\Mcp\Schema\Request\InitializeRequest;
+use KimaiPlugin\McpServerBundle\Vendor\Mcp\Schema\Result\InitializeResult;
+use KimaiPlugin\McpServerBundle\Vendor\Mcp\Schema\ServerCapabilities;
+use KimaiPlugin\McpServerBundle\Vendor\Mcp\Server\Configuration;
+use KimaiPlugin\McpServerBundle\Vendor\Mcp\Server\Session\SessionInterface;
+
+/**
+ * @implements RequestHandlerInterface<InitializeResult>
+ *
+ * @author Christopher Hertel <mail@christopher-hertel.de>
+ */
+final class InitializeHandler implements RequestHandlerInterface
+{
+    public function __construct(
+        public readonly ?Configuration $configuration = null,
+    ) {
+    }
+
+    public function supports(Request $request): bool
+    {
+        return $request instanceof InitializeRequest;
+    }
+
+    /**
+     * @return Response<InitializeResult>
+     */
+    public function handle(Request $request, SessionInterface $session): Response
+    {
+        \assert($request instanceof InitializeRequest);
+
+        $session->set('client_info', $request->clientInfo->jsonSerialize());
+        $session->set('client_capabilities', $request->capabilities->jsonSerialize());
+
+        $negotiated = $this->negotiate($request->protocolVersion);
+        $session->set('protocol_version', $negotiated->value);
+
+        // List changes reach clients only through `subscriptions/listen`, which
+        // the handshake era does not have.
+        $capabilities = ($this->configuration->capabilities ?? new ServerCapabilities())->withoutListChanged();
+
+        return new Response(
+            $request->getId(),
+            new InitializeResult(
+                $capabilities,
+                $this->configuration->serverInfo ?? new Implementation(),
+                $this->configuration?->instructions,
+                null,
+                $negotiated,
+            ),
+        );
+    }
+
+    /**
+     * Picks the protocol version to answer an `initialize` handshake with.
+     *
+     * If the client asked for a version this server supports, the spec requires
+     * responding with that exact version. Otherwise the server counter-offers
+     * the newest version it does support and leaves it to the client to decide
+     * whether it can continue on that revision or must disconnect.
+     */
+    private function negotiate(string $requested): ProtocolVersion
+    {
+        $supported = $this->supportedVersions();
+        $version = ProtocolVersion::tryFrom($requested);
+
+        if (null !== $version && \in_array($version, $supported, true)) {
+            return $version;
+        }
+
+        return $supported[\count($supported) - 1];
+    }
+
+    /**
+     * @return non-empty-list<ProtocolVersion>
+     */
+    private function supportedVersions(): array
+    {
+        return $this->configuration?->handshakeVersions() ?? ProtocolVersion::handshakeVersions();
+    }
+}

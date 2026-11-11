@@ -13,6 +13,8 @@ An MCP server inside [Kimai](https://www.kimai.org), so Claude and other MCP cli
 
 ## Building the bundled libraries
 
+`vendor-prefixed/` is committed, so the plugin works straight from a git tag or a download, like any other Kimai plugin. Rebuild it only when the libraries change (edit and update `tools/deps/composer.json`, whose lock file pins exactly what goes in), and commit the result:
+
 ```sh
 cd tools/deps
 composer install

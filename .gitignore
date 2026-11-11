@@ -1,6 +1,5 @@
 /tools/*/vendor/
 # tools/deps/composer.lock is committed: it pins exactly what goes into vendor-prefixed/
-/vendor-prefixed/
 /.phpunit.cache/
 .env
 .env.*

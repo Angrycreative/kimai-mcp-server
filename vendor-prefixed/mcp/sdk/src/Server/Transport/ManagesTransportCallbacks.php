@@ -1,0 +1,84 @@
+<?php
+
+/*
+ * This file is part of the official PHP MCP SDK.
+ *
+ * A collaboration between Symfony and the PHP Foundation.
+ *
+ * For the full copyright and license information, please view the LICENSE
+ * file that was distributed with this source code.
+ */
+
+namespace KimaiPlugin\McpServerBundle\Vendor\Mcp\Server\Transport;
+
+use KimaiPlugin\McpServerBundle\Vendor\Mcp\Schema\JsonRpc\Error;
+use KimaiPlugin\McpServerBundle\Vendor\Mcp\Schema\JsonRpc\Response;
+use KimaiPlugin\McpServerBundle\Vendor\Mcp\Server\Authorization\AccessToken;
+use KimaiPlugin\McpServerBundle\Vendor\Symfony\Component\Uid\Uuid;
+
+/**
+ * A trait for managing the various callbacks provided by the Protocol layer.
+ *
+ * @phpstan-import-type FiberReturn from \KimaiPlugin\McpServerBundle\Vendor\Mcp\Server\Transport\TransportInterface
+ * @phpstan-import-type FiberResume from \KimaiPlugin\McpServerBundle\Vendor\Mcp\Server\Transport\TransportInterface
+ * @phpstan-import-type FiberSuspend from \KimaiPlugin\McpServerBundle\Vendor\Mcp\Server\Transport\TransportInterface
+ * @phpstan-import-type McpFiber from \KimaiPlugin\McpServerBundle\Vendor\Mcp\Server\Transport\TransportInterface
+ *
+ * @author Kyrian Obikwelu <koshnawaza@gmail.com>
+ * */
+trait ManagesTransportCallbacks
+{
+    /** @var callable(TransportInterface<mixed>, string, ?Uuid, ?AccessToken): void */
+    protected $messageListener;
+
+    /** @var callable(Uuid): void */
+    protected $sessionEndListener;
+
+    /** @var callable(Uuid): array<int, array{message: string, context: array<string, mixed>}> */
+    protected $outgoingMessagesProvider;
+
+    /** @var callable(Uuid, McpFiber): array<string, array<string, mixed>> */
+    protected $pendingRequestsProvider;
+
+    /** @var (callable(Uuid, Uuid): (Response<array<string, mixed>>|Error|null))|null */
+    protected $responseFinder;
+
+    /** @var callable(FiberSuspend|null, ?Uuid, McpFiber): void */
+    protected $fiberYieldHandler;
+
+    public function onMessage(callable $listener): void
+    {
+        $this->messageListener = $listener;
+    }
+
+    public function onSessionEnd(callable $listener): void
+    {
+        $this->sessionEndListener = $listener;
+    }
+
+    public function setOutgoingMessagesProvider(callable $provider): void
+    {
+        $this->outgoingMessagesProvider = $provider;
+    }
+
+    public function setPendingRequestsProvider(callable $provider): void
+    {
+        $this->pendingRequestsProvider = $provider;
+    }
+
+    /**
+     * @param callable(Uuid, Uuid):(Response<array<string, mixed>>|Error|null) $finder
+     */
+    public function setResponseFinder(callable $finder): void
+    {
+        $this->responseFinder = $finder;
+    }
+
+    /**
+     * @param callable(FiberSuspend|null, ?Uuid, McpFiber): void $handler
+     */
+    public function setFiberYieldHandler(callable $handler): void
+    {
+        $this->fiberYieldHandler = $handler;
+    }
+}
