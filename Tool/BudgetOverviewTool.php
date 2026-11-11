@@ -18,6 +18,7 @@ use App\Repository\CustomerRepository;
 use App\Repository\ProjectRepository;
 use App\Repository\Query\ProjectQuery;
 use App\Repository\Query\VisibilityInterface;
+use KimaiPlugin\McpServerBundle\Budget\RecurringBudgets;
 use KimaiPlugin\McpServerBundle\Support\Args;
 use KimaiPlugin\McpServerBundle\Support\Budget;
 use KimaiPlugin\McpServerBundle\Support\Schema;
@@ -30,6 +31,7 @@ final class BudgetOverviewTool extends AbstractReadTool
         private readonly CustomerRepository $customers,
         private readonly ProjectStatisticService $statistics,
         private readonly AuthorizationCheckerInterface $auth,
+        private readonly RecurringBudgets $recurring,
     ) {
     }
 
@@ -42,7 +44,8 @@ final class BudgetOverviewTool extends AbstractReadTool
     {
         return 'Every visible project with a time or money budget whose budget you may see, sorted by how little is '
             . 'left (closest to running out first), with budget, used, remaining or over budget, and share used. Time and money budgets each appear only where Kimai lets you see them. Answers "which '
-            . 'projects are close to their budget?" in one call. Monthly budgets are for the month of "date".';
+            . 'projects are close to their budget?" in one call. Monthly budgets are for the month of "date". A recurring '
+            . 'budget (credited again every interval) is ranked by its current interval rather than its running total.';
     }
 
     public function getInputSchema(): array
@@ -84,6 +87,7 @@ final class BudgetOverviewTool extends AbstractReadTool
 
         $date = Args::date($arguments, 'date', $user) ?? new \DateTimeImmutable('now', new \DateTimeZone($user->getTimezone()));
         $models = $this->statistics->getBudgetStatisticModelForProjects($withBudget, $date);
+        $recurring = $this->recurring->forProjects($withBudget, $date);
 
         $max = isset($arguments['max_remaining_percent']) && is_numeric($arguments['max_remaining_percent']) ? (float) $arguments['max_remaining_percent'] / 100 : null;
 
@@ -95,7 +99,8 @@ final class BudgetOverviewTool extends AbstractReadTool
             }
             $showTime = $this->auth->isGranted('time', $project);
             $showMoney = $this->auth->isGranted('budget', $project);
-            $share = Budget::remainingShare($model, $showTime, $showMoney);
+            $recurringBudget = $recurring[(int) $project->getId()] ?? null;
+            $share = Budget::remainingShare($model, $showTime, $showMoney, $recurringBudget);
             if ($max !== null && $share > $max) {
                 continue;
             }
@@ -104,7 +109,7 @@ final class BudgetOverviewTool extends AbstractReadTool
                 'project' => ['id' => $project->getId(), 'name' => $project->getName()],
                 'customer' => ['id' => $customer?->getId(), 'name' => $customer?->getName()],
                 'remaining_percent' => round($share * 100, 1),
-            ] + Budget::describe($model, $customer?->getCurrency(), $showTime, $showMoney)];
+            ] + Budget::describe($model, $customer?->getCurrency(), $showTime, $showMoney, $recurringBudget)];
         }
 
         usort($rows, static fn (array $a, array $b): int => $a['share'] <=> $b['share']);

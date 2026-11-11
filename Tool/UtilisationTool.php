@@ -17,6 +17,7 @@ use App\Repository\Query\VisibilityInterface;
 use App\Repository\UserRepository;
 use App\WorkingTime\Mode\WorkingTimeModeNone;
 use App\WorkingTime\WorkingTimeService;
+use KimaiPlugin\McpServerBundle\Capacity\WorkingCapacity;
 use KimaiPlugin\McpServerBundle\Category\TimeCategoryProviderInterface;
 use KimaiPlugin\McpServerBundle\Support\Args;
 use KimaiPlugin\McpServerBundle\Support\Format;
@@ -26,11 +27,16 @@ use KimaiPlugin\McpServerBundle\Support\TimeSummary;
 
 final class UtilisationTool extends AbstractReadTool
 {
+    private const BASIS_CONTRACT = 'contract';
+    private const BASIS_DEFAULT = 'default';
+    private const BASIS_NONE = 'none';
+
     public function __construct(
         private readonly TimesheetScope $scope,
         private readonly TimeSummary $summary,
         private readonly UserRepository $users,
         private readonly WorkingTimeService $workingTime,
+        private readonly WorkingCapacity $capacity,
     ) {
     }
 
@@ -44,7 +50,8 @@ final class UtilisationTool extends AbstractReadTool
         return 'Logged time against each person\'s work contract in a period: contract hours, absence, the hours '
             . 'left to work (contract minus absence), hours worked, billable hours, and the shares between them. '
             . 'A period reaching past today is counted up to today. Contract hours come from Kimai\'s work '
-            . 'contract, which does not know public holidays; people without one are flagged.';
+            . 'contract, which does not know public holidays. People without one are counted on the organisation\'s default '
+            . 'week where one is configured (flagged default_week), otherwise flagged no_work_contract.';
     }
 
     public function getInputSchema(): array
@@ -100,8 +107,9 @@ final class UtilisationTool extends AbstractReadTool
         }
 
         $rows = [];
+        $defaultUsed = false;
         foreach ($people as $person) {
-            [$contractSeconds, $hasContract] = $this->contract($person, $from, $to);
+            [$contractSeconds, $basis] = $this->contract($person, $from, $to);
             $contract = Format::hours($contractSeconds);
             $time = $logged[(int) $person->getId()] ?? ['absence' => 0.0, 'worked' => 0.0, 'billable' => 0.0];
             $available = max(0.0, round($contract - $time['absence'], 2));
@@ -117,7 +125,10 @@ final class UtilisationTool extends AbstractReadTool
                 'billable_percent_of_available' => Format::percent($time['billable'], $available),
                 'billable_percent_of_worked' => Format::percent($time['billable'], $time['worked']),
             ];
-            if (!$hasContract) {
+            if ($basis === self::BASIS_DEFAULT) {
+                $row['default_week'] = true;
+                $defaultUsed = true;
+            } elseif ($basis === self::BASIS_NONE) {
                 $row['no_work_contract'] = true;
             }
             $rows[] = $row;
@@ -130,6 +141,10 @@ final class UtilisationTool extends AbstractReadTool
             'period' => ['from' => $arguments['from'], 'to' => $arguments['to']],
             'people' => \array_slice($rows, 0, $limit),
         ];
+        $provider = $this->capacity->provider();
+        if ($defaultUsed && $provider !== null) {
+            $out['default_week'] = 'People flagged default_week have no work contract and are counted on ' . $provider->describe() . '.';
+        }
         if ($capped) {
             $out['note'] = 'The period reaches past today, so it is counted up to today.';
         }
@@ -170,32 +185,47 @@ final class UtilisationTool extends AbstractReadTool
     }
 
     /**
-     * Contract seconds from the first to the last day, within the person's own working days.
+     * Expected seconds from the first to the last day, within the person's own working days: from their contract, else
+     * from the capacity provider, else none.
      *
-     * @return array{0: int, 1: bool}
+     * @return array{0: int, 1: string}
      */
     private function contract(User $person, \DateTimeImmutable $from, \DateTimeImmutable $to): array
     {
         $mode = $this->workingTime->getContractMode($person);
-        if ($mode->getId() === WorkingTimeModeNone::ID) {
-            return [0, false];
+        $calculator = $mode->getId() === WorkingTimeModeNone::ID ? null : $mode->getCalculator($person);
+        $provider = $calculator === null ? $this->capacity->provider() : null;
+        if ($calculator === null && $provider === null) {
+            return [0, self::BASIS_NONE];
         }
 
-        $calculator = $mode->getCalculator($person);
         $start = $person->getWorkStartingDay()?->format('Y-m-d');
         $end = $person->getLastWorkingDay()?->format('Y-m-d');
         $last = $to->format('Y-m-d');
 
         $seconds = 0;
+        $answered = false;
         // midday, so a step of one day never lands on the same date twice across a daylight saving change
         for ($day = $from->setTime(12, 0); $day->format('Y-m-d') <= $last; $day = $day->modify('+1 day')) {
             $key = $day->format('Y-m-d');
             if (($start !== null && $key < $start) || ($end !== null && $key > $end)) {
                 continue;
             }
-            $seconds += $calculator->getWorkHoursForDay($day);
+            if ($calculator !== null) {
+                $seconds += $calculator->getWorkHoursForDay($day);
+                continue;
+            }
+            $forDay = $provider?->secondsWithoutContract($person, $day);
+            if ($forDay !== null) {
+                $answered = true;
+                $seconds += max(0, $forDay);
+            }
         }
 
-        return [$seconds, true];
+        if ($calculator !== null) {
+            return [$seconds, self::BASIS_CONTRACT];
+        }
+
+        return $answered ? [$seconds, self::BASIS_DEFAULT] : [0, self::BASIS_NONE];
     }
 }

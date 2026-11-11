@@ -12,6 +12,7 @@ declare(strict_types=1);
 namespace KimaiPlugin\McpServerBundle\Support;
 
 use App\Model\BudgetStatisticModel;
+use KimaiPlugin\McpServerBundle\Budget\RecurringBudget;
 
 /**
  * A budget as the model reads it, from Kimai's own budget statistic: the same figures as a project's or customer's
@@ -23,7 +24,7 @@ final class Budget
     /**
      * @return array<string, mixed>
      */
-    public static function describe(BudgetStatisticModel $model, ?string $currency, bool $showTime, bool $showMoney): array
+    public static function describe(BudgetStatisticModel $model, ?string $currency, bool $showTime, bool $showMoney, ?RecurringBudget $recurring = null): array
     {
         $out = [
             'type' => $model->isMonthlyBudget() ? 'monthly' : 'total',
@@ -70,14 +71,76 @@ final class Budget
             }
         }
 
+        if ($recurring !== null && self::showsRecurring($recurring, $showTime, $showMoney)) {
+            $out['recurring'] = self::recurring($recurring, $currency);
+            $out['note'] = 'A recurring budget: the budget above is every credit so far, set against all billable '
+                . 'time logged on the project. "recurring" shows the current interval, which is what answers how '
+                . 'much of this period\'s budget is left.';
+        }
+
         return $out;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private static function recurring(RecurringBudget $recurring, ?string $currency): array
+    {
+        $out = [
+            'every' => $recurring->every,
+            'current_interval' => ['from' => Format::date($recurring->intervalStart), 'to' => Format::date($recurring->intervalEnd)],
+        ];
+
+        if ($recurring->type === RecurringBudget::TIME) {
+            $credit = (int) $recurring->credit;
+            $remaining = $credit - $recurring->usedSeconds;
+            $out += [
+                'credit_hours' => Format::hours($credit),
+                'used_hours' => Format::hours($recurring->usedSeconds),
+                'remaining_hours' => Format::hours(max(0, $remaining)),
+                'over_credit_hours' => Format::hours(max(0, -$remaining)),
+                'used_percent' => Format::percent($recurring->usedSeconds, $credit),
+            ];
+        } else {
+            $credit = (float) $recurring->credit;
+            $remaining = $credit - $recurring->usedMoney;
+            $out += [
+                'currency' => $currency,
+                'credit' => Format::money($credit),
+                'billable_revenue' => Format::money($recurring->usedMoney),
+                'remaining' => Format::money(max(0.0, $remaining)),
+                'over_credit' => Format::money(max(0.0, -$remaining)),
+                'used_percent' => Format::percent($recurring->usedMoney, $credit),
+            ];
+        }
+
+        $out['unused_credit'] = $recurring->expiresAfter === null
+            ? 'kept until used'
+            : \sprintf('expires after %d interval%s', $recurring->expiresAfter, $recurring->expiresAfter === 1 ? '' : 's');
+
+        if (!$recurring->credited) {
+            $out['not_started'] = 'Credits have not started: no first credit date is set, so nothing has been added '
+                . 'to the budget yet. The interval shown is the calendar one.';
+        }
+
+        return $out;
+    }
+
+    private static function showsRecurring(RecurringBudget $recurring, bool $showTime, bool $showMoney): bool
+    {
+        return $recurring->type === RecurringBudget::TIME ? $showTime : $showMoney;
     }
 
     /**
      * The smallest share left of the budgets shown, for sorting: 0 is used up, 1 untouched, below 0 overrun.
      */
-    public static function remainingShare(BudgetStatisticModel $model, bool $showTime = true, bool $showMoney = true): float
+    public static function remainingShare(BudgetStatisticModel $model, bool $showTime = true, bool $showMoney = true, ?RecurringBudget $recurring = null): float
     {
+        // a recurring budget's running total says little; its current interval is what runs out
+        if ($recurring !== null && self::showsRecurring($recurring, $showTime, $showMoney)) {
+            return $recurring->remainingShare();
+        }
+
         $shares = [];
         if ($showTime && $model->hasTimeBudget() && $model->getTimeBudget() > 0) {
             $shares[] = ($model->getTimeBudget() - $model->getTimeBudgetSpent()) / $model->getTimeBudget();

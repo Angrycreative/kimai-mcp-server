@@ -15,6 +15,7 @@ use App\Entity\Project;
 use App\Entity\User;
 use App\Project\ProjectStatisticService;
 use App\Repository\ProjectRepository;
+use KimaiPlugin\McpServerBundle\Budget\RecurringBudgets;
 use KimaiPlugin\McpServerBundle\Support\Args;
 use KimaiPlugin\McpServerBundle\Support\Budget;
 use KimaiPlugin\McpServerBundle\Support\Schema;
@@ -26,6 +27,7 @@ final class ProjectBudgetTool extends AbstractReadTool
         private readonly ProjectRepository $projects,
         private readonly ProjectStatisticService $statistics,
         private readonly AuthorizationCheckerInterface $auth,
+        private readonly RecurringBudgets $recurring,
     ) {
     }
 
@@ -38,7 +40,8 @@ final class ProjectBudgetTool extends AbstractReadTool
     {
         return 'A project\'s time and money budget: how much it is, how much is used, what remains (or how much it '
             . 'is over budget) and the share used. Time and money each appear only where Kimai lets you see them. For a monthly budget, the figures are for the month of "date" (default: this month), plus the '
-            . 'all-time totals. Same numbers as the project\'s page in Kimai, which counts only billable time.';
+            . 'all-time totals. Same numbers as the project\'s page in Kimai, which counts only billable time. A recurring '
+            . 'budget (credited again every interval) also shows its current interval, the one holding "date".';
     }
 
     public function getInputSchema(): array
@@ -74,6 +77,12 @@ final class ProjectBudgetTool extends AbstractReadTool
             'customer' => ['id' => $customer?->getId(), 'name' => $customer?->getName()],
             'has_budget' => ($showMoney && $project->hasBudget()) || ($showTime && $project->hasTimeBudget()),
             'month' => $project->isMonthlyBudget() ? $date->format('Y-m') : null,
-        ] + Budget::describe($this->statistics->getBudgetStatisticModel($project, $date), $customer?->getCurrency(), $showTime, $showMoney);
+        ] + Budget::describe(
+            $this->statistics->getBudgetStatisticModel($project, $date),
+            $customer?->getCurrency(),
+            $showTime,
+            $showMoney,
+            $this->recurring->forProjects([$project], $date)[(int) $project->getId()] ?? null
+        );
     }
 }

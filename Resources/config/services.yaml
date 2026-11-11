@@ -24,3 +24,11 @@ services:
     KimaiPlugin\McpServerBundle\Category\TimeCategories:
         arguments:
             $providers: !tagged_iterator kimai_mcp_server.time_category_provider
+
+    KimaiPlugin\McpServerBundle\Capacity\WorkingCapacity:
+        arguments:
+            $providers: !tagged_iterator kimai_mcp_server.working_capacity_provider
+
+    KimaiPlugin\McpServerBundle\Budget\RecurringBudgets:
+        arguments:
+            $providers: !tagged_iterator kimai_mcp_server.recurring_budget_provider
