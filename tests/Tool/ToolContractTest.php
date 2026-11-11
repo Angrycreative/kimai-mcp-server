@@ -11,6 +11,7 @@ declare(strict_types=1);
 
 namespace KimaiPlugin\McpServerBundle\Tests\Tool;
 
+use KimaiPlugin\McpServerBundle\Tool\AbstractWriteTool;
 use KimaiPlugin\McpServerBundle\Tool\ToolInterface;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -68,12 +69,27 @@ class ToolContractTest extends TestCase
         }
     }
 
+    #[DataProvider('tools')]
+    public function testWriteToolsDemandConfirmation(ToolInterface $tool): void
+    {
+        if ($tool->isReadOnly()) {
+            $this->addToAssertionCount(1);
+
+            return;
+        }
+
+        $schema = $tool->getInputSchema();
+        $this->assertContains(AbstractWriteTool::CONFIRM, $schema['required'] ?? []);
+        $this->assertSame('boolean', ((array) $schema['properties'])[AbstractWriteTool::CONFIRM]['type'] ?? null);
+    }
+
     public function testNamesAreUnique(): void
     {
         $names = array_keys(iterator_to_array(self::tools()));
 
         $this->assertSame($names, array_unique($names));
         $this->assertContains('whoami', $names);
-        $this->assertGreaterThanOrEqual(13, \count($names));
+        $this->assertGreaterThanOrEqual(17, \count($names));
+        $this->assertContains('log_absence', $names);
     }
 }

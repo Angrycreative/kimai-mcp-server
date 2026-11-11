@@ -2,7 +2,7 @@
 
 An MCP server inside [Kimai](https://www.kimai.org), so Claude and other MCP clients can read logged time, budgets and planning, and make the changes you approve, with Kimai's own permissions deciding what each caller may see and do.
 
-**Status: in development.** Read-only tools for time, absence, utilisation and budgets work; tools that change data come next. Not released yet.
+**Status: in development.** Read tools for time, absence, utilisation and budgets, and write tools for logging time and absence and archiving customers and projects, work; planner tools come next. Not released yet.
 
 ## How it works
 
@@ -31,6 +31,17 @@ Every tool only shows what the calling user may see in Kimai itself, through Kim
 | `budget_overview` | Every project with a budget, closest to running out first (a recurring budget by its current interval) | as above |
 
 Amounts appear only where you may see rates, and only per customer currency.
+
+### Tools that change data
+
+Every write tool also needs `mcp_write`, and the server enforces confirmation for every client: called without `user_confirmed: true`, a write tool changes nothing and returns a preview of exactly what would happen, for the model to describe and ask about. Everything is checked before the preview, Kimai's own validation included, so a preview that reads fine is a change that goes through. No tool sets or clears the invoiced (exported) flag.
+
+| Tool | Does | Needs |
+| :--- | :--- | :--- |
+| `log_time` | Creates one entry, for yourself or someone else, through Kimai's own timesheet service (locked weeks, overlaps, required custom fields and rates all apply) | `create_own_timesheet`, or `create_other_timesheet` for others |
+| `log_absence` | Logs absence for a day or a range, one entry per working day at the hours the person was expected to work, on their own absence project; the type is given by name. Days already holding absence are skipped, so a repeat logs nothing twice | as above |
+| `archive_customer` | Hides a customer and its visible projects. Refuses while billable time is not yet invoiced, unless told to go ahead | `edit_customer`, `edit_project` |
+| `archive_project` | The same for one project | `edit_project` |
 
 ### Time categories and absence
 

@@ -15,8 +15,7 @@ use App\Entity\User;
 use App\Repository\Query\UserQuery;
 use App\Repository\Query\VisibilityInterface;
 use App\Repository\UserRepository;
-use App\WorkingTime\Mode\WorkingTimeModeNone;
-use App\WorkingTime\WorkingTimeService;
+use KimaiPlugin\McpServerBundle\Capacity\ExpectedHours;
 use KimaiPlugin\McpServerBundle\Capacity\WorkingCapacity;
 use KimaiPlugin\McpServerBundle\Category\TimeCategoryProviderInterface;
 use KimaiPlugin\McpServerBundle\Support\Args;
@@ -35,7 +34,7 @@ final class UtilisationTool extends AbstractReadTool
         private readonly TimesheetScope $scope,
         private readonly TimeSummary $summary,
         private readonly UserRepository $users,
-        private readonly WorkingTimeService $workingTime,
+        private readonly ExpectedHours $expected,
         private readonly WorkingCapacity $capacity,
     ) {
     }
@@ -185,47 +184,30 @@ final class UtilisationTool extends AbstractReadTool
     }
 
     /**
-     * Expected seconds from the first to the last day, within the person's own working days: from their contract, else
-     * from the capacity provider, else none.
+     * Expected seconds from the first to the last day: from the person's contract, else from the capacity provider,
+     * else none.
      *
      * @return array{0: int, 1: string}
      */
     private function contract(User $person, \DateTimeImmutable $from, \DateTimeImmutable $to): array
     {
-        $mode = $this->workingTime->getContractMode($person);
-        $calculator = $mode->getId() === WorkingTimeModeNone::ID ? null : $mode->getCalculator($person);
-        $provider = $calculator === null ? $this->capacity->provider() : null;
-        if ($calculator === null && $provider === null) {
-            return [0, self::BASIS_NONE];
-        }
-
-        $start = $person->getWorkStartingDay()?->format('Y-m-d');
-        $end = $person->getLastWorkingDay()?->format('Y-m-d');
         $last = $to->format('Y-m-d');
-
         $seconds = 0;
-        $answered = false;
+        $basis = ExpectedHours::NONE;
         // midday, so a step of one day never lands on the same date twice across a daylight saving change
         for ($day = $from->setTime(12, 0); $day->format('Y-m-d') <= $last; $day = $day->modify('+1 day')) {
-            $key = $day->format('Y-m-d');
-            if (($start !== null && $key < $start) || ($end !== null && $key > $end)) {
-                continue;
+            [$forDay, $dayBasis] = $this->expected->forDay($person, $day);
+            if ($forDay === null) {
+                return [0, self::BASIS_NONE];
             }
-            if ($calculator !== null) {
-                $seconds += $calculator->getWorkHoursForDay($day);
-                continue;
-            }
-            $forDay = $provider?->secondsWithoutContract($person, $day);
-            if ($forDay !== null) {
-                $answered = true;
-                $seconds += max(0, $forDay);
-            }
+            $seconds += $forDay;
+            $basis = $dayBasis;
         }
 
-        if ($calculator !== null) {
-            return [$seconds, self::BASIS_CONTRACT];
-        }
-
-        return $answered ? [$seconds, self::BASIS_DEFAULT] : [0, self::BASIS_NONE];
+        return match ($basis) {
+            ExpectedHours::CONTRACT => [$seconds, self::BASIS_CONTRACT],
+            ExpectedHours::DEFAULT => [$seconds, self::BASIS_DEFAULT],
+            default => [0, self::BASIS_NONE],
+        };
     }
 }
