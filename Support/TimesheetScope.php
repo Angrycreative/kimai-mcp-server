@@ -65,7 +65,7 @@ final class TimesheetScope
         return $this->auth->isGranted('view_other_timesheet');
     }
 
-    public function mayViewRates(User $user, bool $others): bool
+    public function mayViewRates(bool $others): bool
     {
         return $others ? $this->auth->isGranted('view_rate_other_timesheet') : $this->auth->isGranted('view_rate_own_timesheet');
     }
