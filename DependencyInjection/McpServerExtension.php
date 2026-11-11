@@ -12,9 +12,9 @@ declare(strict_types=1);
 namespace KimaiPlugin\McpServerBundle\DependencyInjection;
 
 use App\Plugin\AbstractPluginExtension;
-use KimaiPlugin\McpServerBundle\Budget\RecurringBudgetProviderInterface;
 use KimaiPlugin\McpServerBundle\Capacity\WorkingCapacityProviderInterface;
 use KimaiPlugin\McpServerBundle\Category\TimeCategoryProviderInterface;
+use KimaiPlugin\McpServerBundle\People\PeopleFilterInterface;
 use KimaiPlugin\McpServerBundle\Tool\ToolInterface;
 use Symfony\Component\Config\FileLocator;
 use Symfony\Component\Config\Resource\ClassExistenceResource;
@@ -27,7 +27,7 @@ class McpServerExtension extends AbstractPluginExtension implements PrependExten
     public const TOOL_TAG = 'kimai_mcp_server.tool';
     public const CATEGORY_PROVIDER_TAG = 'kimai_mcp_server.time_category_provider';
     public const CAPACITY_PROVIDER_TAG = 'kimai_mcp_server.working_capacity_provider';
-    public const RECURRING_BUDGET_PROVIDER_TAG = 'kimai_mcp_server.recurring_budget_provider';
+    public const PEOPLE_FILTER_TAG = 'kimai_mcp_server.people_filter';
 
     public function load(array $configs, ContainerBuilder $container): void
     {
@@ -37,8 +37,8 @@ class McpServerExtension extends AbstractPluginExtension implements PrependExten
         $container->registerForAutoconfiguration(TimeCategoryProviderInterface::class)->addTag(self::CATEGORY_PROVIDER_TAG);
         // A plugin implementing this supplies what people without a work contract are expected to work.
         $container->registerForAutoconfiguration(WorkingCapacityProviderInterface::class)->addTag(self::CAPACITY_PROVIDER_TAG);
-        // A plugin implementing this tells the budget tools about recurring budgets.
-        $container->registerForAutoconfiguration(RecurringBudgetProviderInterface::class)->addTag(self::RECURRING_BUDGET_PROVIDER_TAG);
+        // Every plugin implementing this can leave accounts that are not people out of the people tools.
+        $container->registerForAutoconfiguration(PeopleFilterInterface::class)->addTag(self::PEOPLE_FILTER_TAG);
 
         $loader = new YamlFileLoader($container, new FileLocator(__DIR__ . '/../Resources/config'));
         $loader->load('services.yaml');

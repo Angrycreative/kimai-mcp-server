@@ -18,6 +18,7 @@ use App\Repository\UserRepository;
 use KimaiPlugin\McpServerBundle\Capacity\ExpectedHours;
 use KimaiPlugin\McpServerBundle\Capacity\WorkingCapacity;
 use KimaiPlugin\McpServerBundle\Category\TimeCategoryProviderInterface;
+use KimaiPlugin\McpServerBundle\People\People;
 use KimaiPlugin\McpServerBundle\Support\Args;
 use KimaiPlugin\McpServerBundle\Support\Format;
 use KimaiPlugin\McpServerBundle\Support\Schema;
@@ -36,6 +37,7 @@ final class UtilisationTool extends AbstractReadTool
         private readonly UserRepository $users,
         private readonly ExpectedHours $expected,
         private readonly WorkingCapacity $capacity,
+        private readonly People $people,
     ) {
     }
 
@@ -180,7 +182,7 @@ final class UtilisationTool extends AbstractReadTool
         $query->setVisibility(VisibilityInterface::SHOW_VISIBLE);
         $query->setSystemAccount(false);
 
-        return array_values($this->users->getUsersForQuery($query));
+        return $this->people->only($this->users->getUsersForQuery($query));
     }
 
     /**

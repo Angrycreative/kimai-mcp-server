@@ -30,6 +30,6 @@ services:
         arguments:
             $providers: !tagged_iterator kimai_mcp_server.working_capacity_provider
 
-    KimaiPlugin\McpServerBundle\Budget\RecurringBudgets:
+    KimaiPlugin\McpServerBundle\People\People:
         arguments:
-            $providers: !tagged_iterator kimai_mcp_server.recurring_budget_provider
+            $filters: !tagged_iterator kimai_mcp_server.people_filter

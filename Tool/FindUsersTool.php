@@ -15,13 +15,16 @@ use App\Entity\User;
 use App\Repository\Query\UserQuery;
 use App\Repository\UserRepository;
 use App\Utils\SearchTerm;
+use KimaiPlugin\McpServerBundle\People\People;
 use KimaiPlugin\McpServerBundle\Support\Args;
 use KimaiPlugin\McpServerBundle\Support\Schema;
 
 final class FindUsersTool extends AbstractReadTool
 {
-    public function __construct(private readonly UserRepository $users)
-    {
+    public function __construct(
+        private readonly UserRepository $users,
+        private readonly People $people,
+    ) {
     }
 
     public function getName(): string
@@ -33,7 +36,7 @@ final class FindUsersTool extends AbstractReadTool
     {
         return 'Finds people by name, username or email and returns their IDs for the other tools, with their '
             . 'title, teams and whether their account is active. Only people this user may see in Kimai; system '
-            . 'accounts are left out.';
+            . 'accounts, and accounts that hold time with no person behind them, are left out.';
     }
 
     public function getInputSchema(): array
@@ -63,17 +66,15 @@ final class FindUsersTool extends AbstractReadTool
         $query->setVisibility($this->visibility($arguments));
         $query->setSystemAccount(false);
         $query->setOrderBy('alias');
-        $query->setPageSize($limit);
-        $query->setPage(1);
         if (($term = Args::string($arguments, 'query')) !== null) {
             $query->setSearchTerm(new SearchTerm($term));
         }
 
-        $pager = $this->users->getPagerfantaForQuery($query);
+        // filtered before counting, so "total" and "truncated" describe people only
+        $found = $this->people->only($this->users->getUsersForQuery($query));
 
         $items = [];
-        /** @var User $person */
-        foreach ($pager->getCurrentPageResults() as $person) {
+        foreach (\array_slice($found, 0, $limit) as $person) {
             $items[] = [
                 'id' => $person->getId(),
                 'name' => $person->getDisplayName(),
@@ -89,6 +90,6 @@ final class FindUsersTool extends AbstractReadTool
             ];
         }
 
-        return $this->listResult('users', $items, $pager->getNbResults(), $limit);
+        return $this->listResult('users', $items, \count($found), $limit);
     }
 }

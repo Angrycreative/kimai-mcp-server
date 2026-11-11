@@ -27,8 +27,8 @@ Every tool only shows what the calling user may see in Kimai itself, through Kim
 | `uninvoiced_time` | Billable time not yet exported, per customer and project | `view_other_timesheet` |
 | `absence` | Absence per person and type in a period | `view_own_timesheet` or `view_other_timesheet` |
 | `utilisation` | Logged time against each person's work contract (or the organisation's default week, where a plugin supplies one): absence, worked and billable hours and their shares | as above |
-| `project_budget`, `customer_budget` | A budget, used and remaining, monthly or in total, as on the entity's page in Kimai; a recurring budget also shows its current interval | the budget permission (global or team) |
-| `budget_overview` | Every project with a budget, closest to running out first (a recurring budget by its current interval) | as above |
+| `project_budget`, `customer_budget` | A budget, used and remaining, monthly or in total, as on the entity's page in Kimai | the budget permission (global or team) |
+| `budget_overview` | Every project with a budget, closest to running out first | as above |
 
 Amounts appear only where you may see rates, and only per customer currency.
 
@@ -60,14 +60,14 @@ Kimai has no built-in notion of absence. The tools ask a `TimeCategoryProviderIn
 
 ### Extending from another plugin
 
-Implement one of these in any plugin's service; autoconfiguration picks it up, and for the providers the first one registered is used.
+Implement one of these in any plugin's service; autoconfiguration picks it up. For the providers the first one registered is used.
 
 | Interface | What it adds |
 | :--- | :--- |
 | `Tool\ToolInterface` | A tool, offered to clients subject to the permissions it declares |
 | `Category\TimeCategoryProviderInterface` | Time categories, replacing the absence/other default (see above) |
 | `Capacity\WorkingCapacityProviderInterface` | What someone without a work contract is expected to work. Kimai expects nothing of them, so without a provider `utilisation` shows zero contract hours and flags them `no_work_contract`; with one they are counted on its answer and flagged `default_week` |
-| `Budget\RecurringBudgetProviderInterface` | Recurring budgets (credited again every interval, as RecurringBudgetBundle does). Kimai keeps those as one running total set against all time ever logged, so the budget tools add the current interval: credit, used, remaining and whether unused credit expires |
+| `People\PeopleFilterInterface` | Leaves accounts that are not people (one that collects billable time to invoice, say) out of `find_users` and of `utilisation` when no people are named. Their time still counts in every customer and project figure, and naming one by ID still reaches it. Every registered filter applies, not just the first |
 
 ## Call log and settings
 
