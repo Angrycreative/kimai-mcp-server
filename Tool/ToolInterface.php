@@ -47,7 +47,8 @@ interface ToolInterface
 
     /**
      * Kimai permissions the user must hold, on top of mcp_access (and mcp_write for writes). A tool the user lacks a
-     * permission for is not listed to them at all.
+     * permission for is not listed to them at all. "a|b" means either will do, for permissions Kimai splits into
+     * global and team variants (budget_project|budget_team_project); check the entity itself in call().
      *
      * @return list<string>
      */

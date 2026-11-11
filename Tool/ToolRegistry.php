@@ -51,11 +51,25 @@ final class ToolRegistry
         }
 
         foreach ($permissions as $permission) {
-            if (!$this->auth->isGranted($permission)) {
+            if (!$this->isGrantedAny(explode('|', $permission))) {
                 return false;
             }
         }
 
         return true;
+    }
+
+    /**
+     * @param list<string> $alternatives
+     */
+    private function isGrantedAny(array $alternatives): bool
+    {
+        foreach ($alternatives as $permission) {
+            if ($this->auth->isGranted(trim($permission))) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
