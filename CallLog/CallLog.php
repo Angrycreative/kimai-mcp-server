@@ -60,7 +60,7 @@ final class CallLog
         }
 
         $this->connection->insert(self::TABLE, [
-            'created_at' => (new \DateTimeImmutable())->format('Y-m-d H:i:s'),
+            'created_at' => self::utc('now'),
             'user_id' => $user->getId(),
             'client' => $client === null ? null : mb_substr($client, 0, 150),
             'tool' => mb_substr($tool, 0, 100),
@@ -78,7 +78,7 @@ final class CallLog
      */
     public function prune(int $days): int
     {
-        $before = (new \DateTimeImmutable('-' . max(1, $days) . ' days'))->format('Y-m-d H:i:s');
+        $before = self::utc('-' . max(1, $days) . ' days');
 
         return (int) $this->connection->executeStatement('DELETE FROM ' . self::TABLE . ' WHERE created_at < ?', [$before]);
     }
@@ -109,5 +109,14 @@ final class CallLog
 
         /* @var list<array<string, mixed>> */
         return $qb->executeQuery()->fetchAllAssociative();
+    }
+
+    /**
+     * Times are stored in UTC, as Kimai stores its own. PHP's default timezone is the calling user's during a request
+     * (Kimai sets it per user), so a plain "now" would put two people acting in the same minute an hour apart.
+     */
+    private static function utc(string $when): string
+    {
+        return (new \DateTimeImmutable($when, new \DateTimeZone('UTC')))->format('Y-m-d H:i:s');
     }
 }

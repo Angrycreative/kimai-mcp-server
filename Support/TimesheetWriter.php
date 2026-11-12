@@ -67,12 +67,16 @@ final class TimesheetWriter
     }
 
     /**
+     * A project the caller may log time to. "access" is Kimai's team check, the one its timesheet form applies;
+     * "view" would be the project administration permission, which most people do not hold. Everything else
+     * (visible, not ended, the activity, lockdown) is the "create" voter's and the validator's job in build().
+     *
      * @throws ToolException
      */
     public function project(int $id): Project
     {
         $project = $this->projects->find($id);
-        if (!$project instanceof Project || !$this->auth->isGranted('view', $project)) {
+        if (!$project instanceof Project || !$this->auth->isGranted('access', $project)) {
             throw new ToolException('No project with that ID that you may see.');
         }
 

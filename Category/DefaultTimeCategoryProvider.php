@@ -52,6 +52,10 @@ final class DefaultTimeCategoryProvider implements TimeCategoryProviderInterface
         if ($ids === []) {
             return null;
         }
+        // with a single absence project there is nothing to choose, even for someone who has never logged absence
+        if (\count($ids) === 1) {
+            return $this->entityManager->find(Project::class, $ids[0]);
+        }
 
         /** @var list<Timesheet> $latest */
         $latest = $this->entityManager->createQueryBuilder()

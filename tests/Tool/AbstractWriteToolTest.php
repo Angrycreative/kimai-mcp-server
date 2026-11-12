@@ -21,10 +21,10 @@ use PHPUnit\Framework\TestCase;
 
 class AbstractWriteToolTest extends TestCase
 {
-    private function tool(int &$applied): AbstractWriteTool
+    private function tool(int &$applied, string &$state = 'two plannings'): AbstractWriteTool
     {
-        return new class($applied) extends AbstractWriteTool {
-            public function __construct(private int &$applied)
+        return new class($applied, $state) extends AbstractWriteTool {
+            public function __construct(private int &$applied, private string &$state)
             {
             }
 
@@ -54,7 +54,7 @@ class AbstractWriteToolTest extends TestCase
                     throw new ToolException('Refused before any preview.');
                 }
 
-                return new WritePlan(['rename_to' => $arguments['name']], function (): array {
+                return new WritePlan(['rename_to' => $arguments['name'], 'state' => $this->state], function (): array {
                     ++$this->applied;
 
                     return ['renamed' => true, ToolHandlerAdapter::CHANGED => ['thing:1']];
@@ -81,19 +81,60 @@ class AbstractWriteToolTest extends TestCase
         foreach ([['name' => 'x'], ['name' => 'x', 'user_confirmed' => false], ['name' => 'x', 'user_confirmed' => 'true']] as $arguments) {
             $result = $tool->call($arguments, new User());
             $this->assertTrue($result['preview']);
-            $this->assertSame(['rename_to' => 'x'], $result['would']);
+            $this->assertSame(['rename_to' => 'x', 'state' => 'two plannings'], $result['would']);
+            $this->assertIsString($result['preview_token']);
         }
         $this->assertSame(0, $applied);
     }
 
-    public function testConfirmationApplies(): void
+    public function testConfirmationWithThePreviewsTokenApplies(): void
     {
         $applied = 0;
-        $result = $this->tool($applied)->call(['name' => 'x', 'user_confirmed' => true], new User());
+        $tool = $this->tool($applied);
+        $token = $tool->call(['name' => 'x'], new User())['preview_token'];
+
+        $result = $tool->call(['name' => 'x', 'user_confirmed' => true, 'preview_token' => $token], new User());
 
         $this->assertSame(1, $applied);
         $this->assertTrue($result['done']);
         $this->assertSame(['thing:1'], $result[ToolHandlerAdapter::CHANGED]);
+    }
+
+    public function testConfirmationWithoutAPreviewOnlyPreviews(): void
+    {
+        $applied = 0;
+        $result = $this->tool($applied)->call(['name' => 'x', 'user_confirmed' => true], new User());
+
+        $this->assertSame(0, $applied);
+        $this->assertTrue($result['preview']);
+        $this->assertStringContainsString('needs the preview_token', $result['not_done']);
+    }
+
+    public function testAChangeSinceThePreviewIsPreviewedAgainNotApplied(): void
+    {
+        $applied = 0;
+        $state = 'two plannings';
+        $tool = $this->tool($applied, $state);
+        $token = $tool->call(['name' => 'x'], new User())['preview_token'];
+
+        $state = 'three plannings';
+        $result = $tool->call(['name' => 'x', 'user_confirmed' => true, 'preview_token' => $token], new User());
+
+        $this->assertSame(0, $applied);
+        $this->assertSame('three plannings', $result['would']['state']);
+        $this->assertStringContainsString('no longer the change that was previewed', $result['not_done']);
+    }
+
+    public function testATokenIsForTheseArgumentsOnly(): void
+    {
+        $applied = 0;
+        $tool = $this->tool($applied);
+        $token = $tool->call(['name' => 'x'], new User())['preview_token'];
+
+        $result = $tool->call(['name' => 'y', 'user_confirmed' => true, 'preview_token' => $token], new User());
+
+        $this->assertSame(0, $applied);
+        $this->assertTrue($result['preview']);
     }
 
     public function testRefusalHappensBeforeThePreview(): void

@@ -20,8 +20,11 @@
     </testsuites>
     <source>
         <include>
+            <directory>Capacity</directory>
             <directory>CallLog</directory>
             <directory>Category</directory>
+            <directory>People</directory>
+            <directory>Planner</directory>
             <directory>Server</directory>
             <directory>Settings</directory>
             <directory>Support</directory>

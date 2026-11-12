@@ -30,6 +30,8 @@ use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
  */
 final class TimesheetScope
 {
+    private const NOUNS = ['user_ids' => 'user', 'customer_ids' => 'customer', 'project_ids' => 'project', 'activity_ids' => 'activity'];
+
     public function __construct(
         private readonly TimesheetRepository $timesheets,
         private readonly CustomerRepository $customers,
@@ -87,30 +89,21 @@ final class TimesheetScope
             $query->setEnd($to);
         }
 
-        $userIds = Args::ids($args, 'user_ids');
         if (!$this->seesOthers()) {
-            if (array_diff($userIds, [$user->getId()]) !== []) {
-                throw new ToolException('You can only see your own time: your Kimai role lacks the permission to view other people\'s timesheets.');
-            }
             $query->setUser($user);
-        } elseif ($userIds !== []) {
-            $found = $this->users->findByIds($userIds);
-            if ($found === []) {
-                throw new ToolException('None of the given user_ids exist.');
-            }
-            foreach ($found as $foundUser) {
-                $query->addUser($foundUser);
-            }
+        }
+        foreach ($this->people(Args::ids($args, 'user_ids'), $user) as $person) {
+            $query->addUser($person);
         }
 
         if (($ids = Args::ids($args, 'customer_ids')) !== []) {
-            $query->setCustomers($this->require($this->customers->findByIds($ids), 'customer_ids'));
+            $query->setCustomers($this->require($ids, $this->customers->findByIds($ids), 'customer_ids'));
         }
         if (($ids = Args::ids($args, 'project_ids')) !== []) {
-            $query->setProjects($this->require($this->projects->findByIds($ids), 'project_ids'));
+            $query->setProjects($this->require($ids, $this->projects->findByIds($ids), 'project_ids'));
         }
         if (($ids = Args::ids($args, 'activity_ids')) !== []) {
-            $query->setActivities($this->require($this->activities->findByIds($ids), 'activity_ids'));
+            $query->setActivities($this->require($ids, $this->activities->findByIds($ids), 'activity_ids'));
         }
 
         $billable = Args::bool($args, 'billable');
@@ -165,15 +158,66 @@ final class TimesheetScope
     }
 
     /**
+     * The people named by ID, each checked the way Kimai's own timesheet API checks them: someone outside the
+     * caller's teams is refused, not quietly queried. Kimai limits a query to the caller's teams only when it names
+     * nobody, so a name given here has to pass the same test first.
+     *
+     * @param list<int> $ids
+     * @return list<User>
+     * @throws ToolException
+     */
+    public function people(array $ids, User $user): array
+    {
+        if ($ids === []) {
+            return [];
+        }
+        if (!$this->seesOthers()) {
+            if (array_diff($ids, [$user->getId()]) !== []) {
+                throw new ToolException('You can only see your own time: your Kimai role lacks the permission to view other people\'s timesheets.');
+            }
+
+            return [$user];
+        }
+
+        $found = $this->require($ids, $this->users->findByIds($ids), 'user_ids');
+        $refused = array_map(static fn (User $person): int => (int) $person->getId(), array_filter($found, fn (User $person): bool => !$this->mayAccess($person)));
+        if ($refused !== []) {
+            throw new ToolException(\sprintf('Kimai does not let you see the time of user %s (only people in teams you lead).', implode(', ', $refused)));
+        }
+
+        return array_values($found);
+    }
+
+    /**
+     * Whether the caller may see this person at all ("access_user", as Kimai's API asks).
+     */
+    public function mayAccess(User $person): bool
+    {
+        return $this->auth->isGranted('access_user', $person);
+    }
+
+    /**
+     * Whether the caller may see this person's working hours and contract, as on Kimai's "Working hours" screen.
+     */
+    public function maySeeHours(User $person): bool
+    {
+        return $this->auth->isGranted('hours', $person);
+    }
+
+    /**
+     * Every requested ID has to exist: a total over some of them would look complete while it is not.
+     *
      * @template T of object
+     * @param list<int> $ids
      * @param array<T> $found
      * @return array<T>
      * @throws ToolException
      */
-    private function require(array $found, string $argument): array
+    private function require(array $ids, array $found, string $argument): array
     {
-        if ($found === []) {
-            throw new ToolException(\sprintf('None of the IDs in "%s" exist.', $argument));
+        $missing = array_values(array_diff($ids, array_map(static fn (object $entity): int => (int) (method_exists($entity, 'getId') ? $entity->getId() : 0), $found)));
+        if ($missing !== []) {
+            throw new ToolException(\sprintf('No %s with ID %s.', self::NOUNS[$argument] ?? 'record', implode(', ', $missing)));
         }
 
         return $found;

@@ -228,7 +228,8 @@ final class SetPlannedHoursTool extends AbstractWriteTool
     {
         if ($projectId !== null) {
             $project = $this->projects->find($projectId);
-            if (!$project instanceof Project || !$this->auth->isGranted('view', $project) || $project->getCustomer() === null) {
+            // "access" is Kimai's team check; "view" would be the project administration permission most people lack
+            if (!$project instanceof Project || !$this->auth->isGranted('access', $project) || $project->getCustomer() === null) {
                 throw new ToolException('No project with that ID that you may see.');
             }
             if ($customerId !== null && $project->getCustomer()->getId() !== $customerId) {
@@ -239,7 +240,7 @@ final class SetPlannedHoursTool extends AbstractWriteTool
         }
 
         $customer = $this->customers->find((int) $customerId);
-        if (!$customer instanceof Customer || !$this->auth->isGranted('view', $customer)) {
+        if (!$customer instanceof Customer || !$this->auth->isGranted('access', $customer)) {
             throw new ToolException('No customer with that ID that you may see.');
         }
 

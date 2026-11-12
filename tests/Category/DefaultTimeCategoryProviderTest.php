@@ -11,12 +11,14 @@ declare(strict_types=1);
 
 namespace KimaiPlugin\McpServerBundle\Tests\Category;
 
+use App\Entity\Project;
 use Doctrine\ORM\EntityManagerInterface;
 use KimaiPlugin\McpServerBundle\Category\DefaultTimeCategoryProvider;
 use KimaiPlugin\McpServerBundle\Category\TimeCategories;
 use KimaiPlugin\McpServerBundle\Category\TimeCategoryProviderInterface;
 use KimaiPlugin\McpServerBundle\Settings\McpSettings;
 use KimaiPlugin\McpServerBundle\Tests\Settings\McpSettingsTest;
+use KimaiPlugin\McpServerBundle\Tests\TestUser;
 use PHPUnit\Framework\TestCase;
 
 class DefaultTimeCategoryProviderTest extends TestCase
@@ -47,5 +49,17 @@ class DefaultTimeCategoryProviderTest extends TestCase
 
         $this->assertSame($other, (new TimeCategories([$default, $other], $default))->provider());
         $this->assertSame($default, (new TimeCategories([$default], $default))->provider());
+    }
+
+    public function testWithOneAbsenceProjectEveryoneGetsIt(): void
+    {
+        $project = new Project();
+        $em = $this->createMock(EntityManagerInterface::class);
+        $em->expects($this->once())->method('find')->with(Project::class, 528)->willReturn($project);
+        $em->expects($this->never())->method('createQueryBuilder');
+
+        $provider = new DefaultTimeCategoryProvider(McpSettingsTest::settings([McpSettings::ABSENCE_PROJECTS => '528']), $em);
+
+        $this->assertSame($project, $provider->getAbsenceProjectFor(TestUser::make(5)));
     }
 }

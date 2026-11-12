@@ -13,6 +13,7 @@ namespace KimaiPlugin\McpServerBundle\Tests\Server;
 
 use App\Entity\User;
 use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\DriverManager;
 use KimaiPlugin\McpServerBundle\CallLog\CallLog;
 use KimaiPlugin\McpServerBundle\Server\ToolHandlerAdapter;
 use KimaiPlugin\McpServerBundle\Settings\McpSettings;
@@ -121,5 +122,39 @@ class ToolHandlerAdapterTest extends TestCase
         }
 
         $this->assertSame('RuntimeException: database gone', $this->logged[0]['error']);
+    }
+
+    public function testAWriteThatFailsHalfwaySavesNothing(): void
+    {
+        $db = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]);
+        $db->executeStatement('CREATE TABLE saved (id INTEGER)');
+        $tool = $this->tool(false, static function () use ($db): array {
+            $db->insert('saved', ['id' => 1]);
+            $db->insert('saved', ['id' => 2]);
+
+            throw new ToolException('Kimai refused the third entry.');
+        });
+
+        $result = (new ToolHandlerAdapter($tool, TestUser::make(3), $this->callLog(), null, $db))->execute(['user_confirmed' => true], $this->gateway());
+
+        $this->assertTrue($result->isError);
+        $this->assertSame(0, (int) $db->fetchOne('SELECT COUNT(*) FROM saved'));
+        $this->assertSame('Nothing was changed. Kimai refused the third entry.', $this->logged[0]['error']);
+    }
+
+    public function testAWriteThatSucceedsIsCommitted(): void
+    {
+        $db = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]);
+        $db->executeStatement('CREATE TABLE saved (id INTEGER)');
+        $tool = $this->tool(false, static function () use ($db): array {
+            $db->insert('saved', ['id' => 1]);
+
+            return ['done' => true];
+        });
+
+        (new ToolHandlerAdapter($tool, TestUser::make(3), $this->callLog(), null, $db))->execute(['user_confirmed' => true], $this->gateway());
+
+        $this->assertFalse($db->isTransactionActive());
+        $this->assertSame(1, (int) $db->fetchOne('SELECT COUNT(*) FROM saved'));
     }
 }

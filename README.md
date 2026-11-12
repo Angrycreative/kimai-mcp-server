@@ -34,7 +34,7 @@ Amounts appear only where you may see rates, and only per customer currency.
 
 ### Tools that change data
 
-Every write tool also needs `mcp_write`, and the server enforces confirmation for every client: called without `user_confirmed: true`, a write tool changes nothing and returns a preview of exactly what would happen, for the model to describe and ask about. Everything is checked before the preview, Kimai's own validation included, so a preview that reads fine is a change that goes through. No tool sets or clears the invoiced (exported) flag.
+Every write tool also needs `mcp_write`, and the server enforces confirmation for every client: called without `user_confirmed: true`, a write tool changes nothing and returns a preview of exactly what would happen, for the model to describe and ask about. The confirming call must carry the preview's `preview_token`, and saves only if the change worked out again is still the one previewed; otherwise it returns the new preview. A tool that saves several records saves all of them or none. Everything is checked before the preview, Kimai's own validation included, so a preview that reads fine is a change that goes through. No tool sets or clears the invoiced (exported) flag.
 
 | Tool | Does | Needs |
 | :--- | :--- | :--- |

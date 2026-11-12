@@ -109,22 +109,34 @@ final class UtilisationTool extends AbstractReadTool
 
         $rows = [];
         $defaultUsed = false;
+        $hidden = false;
         foreach ($people as $person) {
-            [$contractSeconds, $basis] = $this->contract($person, $from, $to);
-            $contract = Format::hours($contractSeconds);
             $time = $logged[(int) $person->getId()] ?? ['absence' => 0.0, 'worked' => 0.0, 'billable' => 0.0];
-            $available = max(0.0, round($contract - $time['absence'], 2));
-
             $row = [
                 'user' => ['id' => $person->getId(), 'name' => $person->getDisplayName()],
-                'contract_hours' => $contract,
                 'absence_hours' => round($time['absence'], 2),
-                'available_hours' => $available,
                 'worked_hours' => round($time['worked'], 2),
                 'billable_hours' => round($time['billable'], 2),
+                'billable_percent_of_worked' => Format::percent($time['billable'], $time['worked']),
+            ];
+
+            // someone else's working hours are as private as Kimai's own "Working hours" screen keeps them
+            if (!$this->scope->maySeeHours($person)) {
+                $row['contract_hidden'] = true;
+                $hidden = true;
+                $rows[] = $row;
+                continue;
+            }
+
+            [$contractSeconds, $basis] = $this->contract($person, $from, $to);
+            $contract = Format::hours($contractSeconds);
+            $available = max(0.0, round($contract - $time['absence'], 2));
+            $row = \array_slice($row, 0, 1, true) + [
+                'contract_hours' => $contract,
+                'available_hours' => $available,
+            ] + \array_slice($row, 1, null, true) + [
                 'worked_percent_of_available' => Format::percent($time['worked'], $available),
                 'billable_percent_of_available' => Format::percent($time['billable'], $available),
-                'billable_percent_of_worked' => Format::percent($time['billable'], $time['worked']),
             ];
             if ($basis === self::BASIS_DEFAULT) {
                 $row['default_week'] = true;
@@ -146,6 +158,9 @@ final class UtilisationTool extends AbstractReadTool
         if ($defaultUsed && $provider !== null) {
             $out['default_week'] = 'People flagged default_week have no work contract and are counted on ' . $provider->describe() . '.';
         }
+        if ($hidden) {
+            $out['contract_hidden'] = 'Your Kimai role may not see the working hours of people flagged contract_hidden, so only their logged time is shown.';
+        }
         if ($capped) {
             $out['note'] = 'The period reaches past today, so it is counted up to today.';
         }
@@ -166,15 +181,11 @@ final class UtilisationTool extends AbstractReadTool
         $ids = Args::ids($arguments, 'user_ids');
 
         if (!$this->scope->seesOthers()) {
-            if (array_diff($ids, [$user->getId()]) !== []) {
-                throw new ToolException('You can only see your own time: your Kimai role lacks the permission to view other people\'s timesheets.');
-            }
-
-            return [$user];
+            return $ids === [] ? [$user] : $this->scope->people($ids, $user);
         }
 
         if ($ids !== []) {
-            return array_values($this->users->findByIds($ids));
+            return $this->scope->people($ids, $user);
         }
 
         $query = new UserQuery();
@@ -182,7 +193,10 @@ final class UtilisationTool extends AbstractReadTool
         $query->setVisibility(VisibilityInterface::SHOW_VISIBLE);
         $query->setSystemAccount(false);
 
-        return $this->people->only($this->users->getUsersForQuery($query));
+        return array_values(array_filter(
+            $this->people->only($this->users->getUsersForQuery($query)),
+            fn (User $person): bool => $this->scope->mayAccess($person)
+        ));
     }
 
     /**

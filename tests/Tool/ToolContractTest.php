@@ -90,7 +90,11 @@ class ToolContractTest extends TestCase
 
     public function testNamesAreUnique(): void
     {
-        $names = array_keys(iterator_to_array(self::tools()));
+        // collected one by one: iterator_to_array() would fold two tools of the same name into one key
+        $names = [];
+        foreach (self::tools() as $name => $tool) {
+            $names[] = $name;
+        }
 
         $this->assertSame($names, array_unique($names));
         $this->assertContains('whoami', $names);

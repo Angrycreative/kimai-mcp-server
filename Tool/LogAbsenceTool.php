@@ -50,7 +50,9 @@ final class LogAbsenceTool extends AbstractWriteTool
             . 'work contract, or the organisation\'s default week), unless "hours" says otherwise. Days they were not '
             . 'expected to work, and days that already have absence logged, are skipped, so repeating a call logs '
             . 'nothing twice. For yourself, or someone else (user_id) if your Kimai role may log time for others. '
-            . 'The absence type is given by name and matched in the person\'s own absence project.';
+            . 'The absence type is given by name and matched in the person\'s own absence project. Kimai\'s work '
+            . 'contract does not know public holidays, so leave them out of the range (or log them separately) where '
+            . 'the person does not work them.';
     }
 
     protected function getArgumentSchema(): array
@@ -76,7 +78,7 @@ final class LogAbsenceTool extends AbstractWriteTool
         $provider = $this->categories->provider();
         $project = $provider->getAbsenceProjectFor($owner);
         if ($project === null) {
-            throw new ToolException(\sprintf('No absence project is set up for %s: an administrator picks the absence projects in Kimai\'s settings.', $owner->getDisplayName()));
+            throw new ToolException(\sprintf('Kimai cannot tell which absence project is %s\'s: either none is set up in Kimai\'s settings, or there are several and they have never logged absence on one. Log their first absence in Kimai itself.', $owner->getDisplayName()));
         }
         $project = $this->writer->project((int) $project->getId());
         $activity = $this->type($project, (string) Args::string($arguments, 'type'));

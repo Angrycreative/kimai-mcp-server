@@ -71,21 +71,33 @@ class TimesheetScopeTest extends TestCase
         $this->assertSame($user, $this->scope(['view_own_timesheet'])->query(['user_ids' => [5]], $user)->getUser());
     }
 
-    public function testWithViewOtherTimesheetTheChosenPeopleAreQueried(): void
+    public function testWithViewOtherTimesheetTheChosenPeopleAreQueriedWhenKimaiLetsTheCallerSeeThem(): void
     {
         $other = TestUser::make(6);
         $users = $this->createMock(UserRepository::class);
         $users->expects($this->once())->method('findByIds')->with([6])->willReturn([$other]);
 
-        $query = $this->scope(['view_other_timesheet'], $users)->query(['user_ids' => [6]], TestUser::make(5));
+        $query = $this->scope(['view_other_timesheet', 'access_user'], $users)->query(['user_ids' => [6]], TestUser::make(5));
 
         $this->assertNull($query->getUser());
         $this->assertSame([$other], $query->getUsers());
     }
 
+    public function testSomeoneTheCallerMayNotSeeIsRefusedNotQueried(): void
+    {
+        $users = $this->createMock(UserRepository::class);
+        $users->method('findByIds')->willReturn([TestUser::make(6)]);
+
+        $this->expectException(ToolException::class);
+        $this->expectExceptionMessage('Kimai does not let you see the time of user 6');
+
+        $this->scope(['view_other_timesheet'], $users)->query(['user_ids' => [6]], TestUser::make(5));
+    }
+
     public function testFiltersMapOntoKimaisQuery(): void
     {
         $customer = new Customer('ACME');
+        (new \ReflectionProperty(Customer::class, 'id'))->setValue($customer, 9);
         $customers = $this->createMock(CustomerRepository::class);
         $customers->method('findByIds')->with([9])->willReturn([$customer]);
 
@@ -112,7 +124,7 @@ class TimesheetScopeTest extends TestCase
         $customers->method('findByIds')->willReturn([]);
 
         $this->expectException(ToolException::class);
-        $this->expectExceptionMessage('None of the IDs in "customer_ids" exist.');
+        $this->expectExceptionMessage('No customer with ID 999.');
 
         $this->scope(['view_other_timesheet'], null, $customers)->query(['customer_ids' => [999]], TestUser::make(5));
     }

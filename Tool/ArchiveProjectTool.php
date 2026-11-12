@@ -18,12 +18,14 @@ use KimaiPlugin\McpServerBundle\Server\ToolHandlerAdapter;
 use KimaiPlugin\McpServerBundle\Support\Archiver;
 use KimaiPlugin\McpServerBundle\Support\Args;
 use KimaiPlugin\McpServerBundle\Support\Schema;
+use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
 
 final class ArchiveProjectTool extends AbstractWriteTool
 {
     public function __construct(
         private readonly ProjectRepository $projects,
         private readonly Archiver $archiver,
+        private readonly AuthorizationCheckerInterface $auth,
     ) {
     }
 
@@ -55,13 +57,14 @@ final class ArchiveProjectTool extends AbstractWriteTool
     protected function plan(array $arguments, User $user): WritePlan
     {
         $project = $this->projects->find((int) Args::int($arguments, 'project_id'));
-        if (!$project instanceof Project) {
-            throw new ToolException('No project with that ID.');
+        // one answer for "no such project" and "not yours to edit", so the name of a project the caller may not
+        // edit never comes back
+        if (!$project instanceof Project || !$this->auth->isGranted('edit', $project)) {
+            throw new ToolException('No project with that ID that you may edit.');
         }
         if (!$project->isVisible()) {
             throw new ToolException(\sprintf('"%s" is already archived.', $project->getName()));
         }
-        $this->archiver->assertEditable([$project]);
         $uninvoiced = $this->archiver->uninvoiced([$project]);
         $this->archiver->assertInvoiced($uninvoiced, Args::bool($arguments, 'ignore_uninvoiced') === true, \sprintf('"%s"', $project->getName()));
 

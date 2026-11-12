@@ -65,7 +65,7 @@ final class LogCommand extends Command
             ];
         }
 
-        (new SymfonyStyle($input, $output))->table(['When', 'User', 'Client', 'Tool', 'Arguments', 'Result', 'Took'], $table);
+        (new SymfonyStyle($input, $output))->table(['When (UTC)', 'User', 'Client', 'Tool', 'Arguments', 'Result', 'Took'], $table);
 
         return Command::SUCCESS;
     }

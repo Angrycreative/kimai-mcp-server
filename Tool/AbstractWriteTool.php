@@ -18,10 +18,16 @@ use App\Entity\User;
  * user_confirmed: true the tool changes nothing and returns a preview of exactly what would happen. Everything is
  * checked before the preview (permissions, Kimai's own validation), so a preview that reads fine is a change that
  * will go through.
+ *
+ * The preview carries a token for that exact change. A confirmation saves only with the token, and only while the
+ * change worked out again is still the one previewed: if someone changed the data in between (a planning added to
+ * the week being cleared, say), the person gets the new preview instead of a change they never saw. The token is a
+ * digest, not a secret: it stops a confirmation that skipped the preview or outlived it, not a client that forges it.
  */
 abstract class AbstractWriteTool implements ToolInterface
 {
     public const CONFIRM = 'user_confirmed';
+    public const TOKEN = 'preview_token';
 
     final public function isReadOnly(): bool
     {
@@ -39,6 +45,10 @@ abstract class AbstractWriteTool implements ToolInterface
                 . 'described to them. Otherwise leave it false: nothing changes and you get a preview to describe '
                 . 'to them first.',
         ];
+        $properties[self::TOKEN] = [
+            'type' => 'string',
+            'description' => 'With user_confirmed: true, the preview_token the preview of this exact change returned.',
+        ];
         $schema['properties'] = $properties;
         /** @var list<string> $required */
         $required = \is_array($schema['required'] ?? null) ? $schema['required'] : [];
@@ -50,21 +60,57 @@ abstract class AbstractWriteTool implements ToolInterface
     final public function call(array $arguments, User $user): array
     {
         $plan = $this->plan($arguments, $user);
+        $token = $this->token($plan, $arguments, $user);
 
         if (($arguments[self::CONFIRM] ?? false) !== true) {
-            return [
-                'preview' => true,
-                'would' => $plan->summary,
-                'next' => 'Nothing has changed. Describe this to the person and ask them to confirm. Call again with '
-                    . 'the same arguments and user_confirmed: true only if they say yes.',
-            ];
+            return $this->preview($plan, $token);
+        }
+
+        $given = $arguments[self::TOKEN] ?? null;
+        if ($given === null || $given === '') {
+            return $this->preview($plan, $token, 'Nothing has changed: a confirmation needs the preview_token of the preview the person agreed to.');
+        }
+        if (!\is_string($given) || !hash_equals($token, $given)) {
+            return $this->preview($plan, $token, 'Nothing has changed: this is no longer the change that was previewed, because the data or the arguments changed since. Describe this new preview to the person.');
         }
 
         return ['done' => true] + $plan->apply();
     }
 
     /**
-     * The arguments this tool takes, without user_confirmed, which is added for every write tool.
+     * @return array<string, mixed>
+     */
+    private function preview(WritePlan $plan, string $token, ?string $reason = null): array
+    {
+        $preview = ['preview' => true];
+        if ($reason !== null) {
+            $preview['not_done'] = $reason;
+        }
+
+        return $preview + [
+            'would' => $plan->summary,
+            'preview_token' => $token,
+            'next' => 'Nothing has changed. Describe this to the person and ask them to confirm. Call again with '
+                . 'the same arguments, user_confirmed: true and this preview_token only if they say yes.',
+        ];
+    }
+
+    /**
+     * A digest of who asks, which tool, the arguments and the change worked out from them.
+     *
+     * @param array<string, mixed> $arguments
+     */
+    private function token(WritePlan $plan, array $arguments, User $user): string
+    {
+        unset($arguments[self::CONFIRM], $arguments[self::TOKEN]);
+        ksort($arguments);
+        $subject = json_encode([$this->getName(), $user->getId(), $arguments, $plan->summary], \JSON_UNESCAPED_UNICODE | \JSON_PARTIAL_OUTPUT_ON_ERROR);
+
+        return substr(hash('sha256', (string) $subject), 0, 16);
+    }
+
+    /**
+     * The arguments this tool takes, without user_confirmed and preview_token, which are added for every write tool.
      *
      * @return array<string, mixed>
      */

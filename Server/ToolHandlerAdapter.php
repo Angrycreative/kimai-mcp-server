@@ -12,7 +12,9 @@ declare(strict_types=1);
 namespace KimaiPlugin\McpServerBundle\Server;
 
 use App\Entity\User;
+use Doctrine\DBAL\Connection;
 use KimaiPlugin\McpServerBundle\CallLog\CallLog;
+use KimaiPlugin\McpServerBundle\Tool\AbstractWriteTool;
 use KimaiPlugin\McpServerBundle\Tool\ToolException;
 use KimaiPlugin\McpServerBundle\Tool\ToolInterface;
 use KimaiPlugin\McpServerBundle\Vendor\Mcp\Schema\Content\TextContent;
@@ -34,6 +36,7 @@ final class ToolHandlerAdapter implements ToolHandlerInterface
         private readonly User $user,
         private readonly CallLog $callLog,
         private readonly ?string $client,
+        private readonly ?Connection $connection = null,
     ) {
     }
 
@@ -41,13 +44,29 @@ final class ToolHandlerAdapter implements ToolHandlerInterface
     {
         $started = hrtime(true);
 
+        // a write saves everything or nothing: a tool that saves several records and fails halfway must not leave
+        // the first ones behind, unreported
+        $transaction = !$this->tool->isReadOnly() && $this->connection !== null;
+        if ($transaction) {
+            $this->connection->beginTransaction();
+        }
+
         try {
             $result = $this->tool->call($arguments, $this->user);
+            if ($transaction) {
+                $this->connection->commit();
+            }
         } catch (ToolException $e) {
-            $this->log($arguments, $started, $e->getMessage());
+            $this->rollBack($transaction);
+            $message = $e->getMessage();
+            if ($transaction && ($arguments[AbstractWriteTool::CONFIRM] ?? false) === true) {
+                $message = 'Nothing was changed. ' . $message;
+            }
+            $this->log($arguments, $started, $message);
 
-            return new CallToolResult([new TextContent($e->getMessage())], true);
+            return new CallToolResult([new TextContent($message)], true);
         } catch (\Throwable $e) {
+            $this->rollBack($transaction);
             // logged, then left to the SDK, which answers with a generic error rather than our internals
             $this->log($arguments, $started, $e::class . ': ' . $e->getMessage());
 
@@ -67,6 +86,13 @@ final class ToolHandlerAdapter implements ToolHandlerInterface
             false,
             $result,
         );
+    }
+
+    private function rollBack(bool $transaction): void
+    {
+        if ($transaction && $this->connection !== null && $this->connection->isTransactionActive()) {
+            $this->connection->rollBack();
+        }
     }
 
     /**

@@ -77,7 +77,7 @@ final class ServerFactory
                 ),
             );
 
-            $builder->add($definition, new ToolHandlerAdapter($tool, $user, $this->callLog, $client));
+            $builder->add($definition, new ToolHandlerAdapter($tool, $user, $this->callLog, $client, $this->connection));
         }
 
         return $builder->build();
