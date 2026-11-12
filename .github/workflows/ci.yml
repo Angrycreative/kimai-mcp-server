@@ -11,13 +11,14 @@ permissions:
 
 jobs:
   test:
-    name: PHP ${{ matrix.php }}, Kimai ${{ matrix.kimai }}
+    name: PHP ${{ matrix.php }}, Kimai ${{ matrix.kimai }}, Planner ${{ matrix.planner }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         # the oldest Kimai the plugin declares (extra.kimai.require) and the newest PHP Kimai supports
         kimai: ['2.64.0']
+        planner: ['2.2.0']
         php: ['8.2', '8.4']
     steps:
       - uses: actions/checkout@v4
@@ -30,6 +31,13 @@ jobs:
           repository: kimai/kimai
           ref: ${{ matrix.kimai }}
           path: kimai
+
+      # the planner tools build on the Weekly Planner, which Kimai loads from var/plugins
+      - uses: actions/checkout@v4
+        with:
+          repository: happiness/PlannerBundle
+          ref: ${{ matrix.planner }}
+          path: kimai/var/plugins/PlannerBundle
 
       - uses: shivammathur/setup-php@v2
         with:
