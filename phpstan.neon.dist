@@ -1,0 +1,24 @@
+# Runs against an existing Kimai checkout, which supplies Kimai's classes and Symfony:
+#
+#     KIMAI_DIR=/path/to/kimai tools/qa/vendor/bin/phpstan analyse
+includes:
+    - tools/qa/vendor/phpstan/phpstan-symfony/extension.neon
+    - tools/qa/vendor/phpstan/phpstan-doctrine/extension.neon
+parameters:
+    level: 9
+    paths:
+        - .
+    excludePaths:
+        - vendor-prefixed/
+        - tools/
+        - tests/
+    treatPhpDocTypesAsCertain: false
+    featureToggles:
+        skipCheckGenericClasses:
+            - Symfony\Component\Form\AbstractType
+            - Symfony\Component\Form\FormInterface
+            - Symfony\Component\Form\FormTypeExtensionInterface
+            - Symfony\Component\Form\FormTypeInterface
+    bootstrapFiles:
+        - tools/qa/vendor/autoload.php
+        - tests/bootstrap.php

@@ -1,0 +1,40 @@
+name: Release
+
+# A version tag (1.2.3) builds McpServerBundle-1.2.3.zip and publishes it as a GitHub release, once the checks pass.
+on:
+  push:
+    tags: ['[0-9]+.[0-9]+.[0-9]+*']
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    uses: ./.github/workflows/ci.yml
+
+  release:
+    needs: checks
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: The tag matches the plugin's version
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          for version in "$(jq -r .version composer.json)" "$(jq -r .extra.kimai.version composer.json)"; do
+            if [ "$version" != "$tag" ]; then
+              echo "::error::composer.json says $version, the tag is $tag"
+              exit 1
+            fi
+          done
+
+      # vendor-prefixed/ is committed, so the archive is the whole plugin; .gitattributes leaves out tests and tools
+      - name: Build the zip
+        run: git archive --format=zip --prefix=McpServerBundle/ -o "McpServerBundle-${GITHUB_REF_NAME}.zip" "${GITHUB_REF_NAME}"
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${GITHUB_REF_NAME}" "McpServerBundle-${GITHUB_REF_NAME}.zip" --verify-tag --generate-notes --title "${GITHUB_REF_NAME}"

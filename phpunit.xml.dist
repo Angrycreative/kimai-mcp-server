@@ -2,12 +2,12 @@
 <!--
     Runs against an existing Kimai checkout, which supplies Kimai's classes and Symfony:
 
-        KIMAI_DIR=/path/to/kimai tools/phpunit/vendor/bin/phpunit
+        KIMAI_DIR=/path/to/kimai tools/qa/vendor/bin/phpunit
 
-    Install PHPUnit once with: composer install -d tools/phpunit
+    Install the tools once with: composer install -d tools/qa
 -->
 <phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:noNamespaceSchemaLocation="tools/phpunit/vendor/phpunit/phpunit/phpunit.xsd"
+         xsi:noNamespaceSchemaLocation="tools/qa/vendor/phpunit/phpunit/phpunit.xsd"
          bootstrap="tests/bootstrap.php"
          colors="true"
          cacheDirectory=".phpunit.cache"

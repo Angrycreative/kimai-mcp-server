@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: PHP ${{ matrix.php }}, Kimai ${{ matrix.kimai }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # the oldest Kimai the plugin declares (extra.kimai.require) and the newest PHP Kimai supports
+        kimai: ['2.64.0']
+        php: ['8.2', '8.4']
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: kimai-mcp-server
+
+      # the tests and phpstan load Kimai's classes from a checkout next to this one
+      - uses: actions/checkout@v4
+        with:
+          repository: kimai/kimai
+          ref: ${{ matrix.kimai }}
+          path: kimai
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: gd, intl, mbstring, pdo_sqlite, xsl, zip
+          coverage: none
+
+      - name: Install Kimai
+        working-directory: kimai
+        run: composer install --no-dev --no-scripts --no-progress
+
+      - name: Install the tools
+        working-directory: kimai-mcp-server
+        run: composer install -d tools/qa --no-progress
+
+      - name: Code style
+        working-directory: kimai-mcp-server
+        run: tools/qa/vendor/bin/php-cs-fixer fix --dry-run --diff
+
+      - name: PHPStan
+        working-directory: kimai-mcp-server
+        run: tools/qa/vendor/bin/phpstan analyse --no-progress --memory-limit=2G
+
+      - name: PHPUnit
+        working-directory: kimai-mcp-server
+        run: tools/qa/vendor/bin/phpunit

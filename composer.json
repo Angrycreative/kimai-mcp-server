@@ -3,7 +3,7 @@
     "description": "An MCP server inside Kimai: lets Claude and other MCP clients read time, budgets and planning, and make approved changes, with Kimai's own permissions deciding what each caller may see and do.",
     "homepage": "https://github.com/Angrycreative/kimai-mcp-server",
     "type": "kimai-plugin",
-    "version": "0.1.0-dev",
+    "version": "0.1.0",
     "require": {
         "php": ">=8.2",
         "ext-fileinfo": "*",
@@ -28,7 +28,7 @@
         "kimai": {
             "require": 26400,
             "name": "McpServer",
-            "version": "0.1.0-dev"
+            "version": "0.1.0"
         }
     }
 }
