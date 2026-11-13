@@ -73,7 +73,7 @@ Every write tool also needs `mcp_write`, and the server enforces confirmation fo
 | Tool | Does | Needs |
 | :--- | :--- | :--- |
 | `log_time` | Creates one entry, for yourself or someone else, through Kimai's own timesheet service (locked weeks, overlaps, required custom fields and rates all apply) | `create_own_timesheet`, or `create_other_timesheet` for others |
-| `log_absence` | Logs absence for a day or a range, one entry per working day at the hours the person was expected to work, on their own absence project; the type is given by name. Days already holding absence are skipped, so a repeat logs nothing twice | as above |
+| `log_absence` | Logs absence for a day or a range, one entry per working day at the hours the person was expected to work, on their own absence project; the type is given by name. Days already holding absence are skipped, so a repeat logs nothing twice, and so are the public holidays the person has off when the Weekly Planner is installed (its holiday calendar) | as above |
 | `update_timesheet` | Corrects one of your own entries: project, activity, day, times, description, billable or custom fields. Only what is given changes: a new day keeps the start time and hours, a new start keeps the hours | `edit_own_timesheet` |
 | `delete_timesheet` | Deletes one of your own entries, such as a duplicate | `delete_own_timesheet` |
 | `archive_customer` | Hides a customer and its visible projects. Refuses while billable time is not yet invoiced, unless told to go ahead | `edit_customer`, `edit_project` |
@@ -81,7 +81,7 @@ Every write tool also needs `mcp_write`, and the server enforces confirmation fo
 
 ### Weekly Planner tools
 
-Registered only when [PlannerBundle](https://github.com/happiness/PlannerBundle) is installed. They see and change exactly what the planner's own rules allow: its user list (including plugins that leave people out) and its voter, so reserved time still needs `plan_reservations_planner`.
+Registered only when [PlannerBundle](https://github.com/happiness/PlannerBundle) is installed. They see and change exactly what the planner's own rules allow: its user list (including plugins that leave people out) and its voter, so reserved time still needs `plan_reservations_planner`. With it, `log_absence` also skips the public holidays in each person's holiday calendar.
 
 | Tool | Does | Needs |
 | :--- | :--- | :--- |

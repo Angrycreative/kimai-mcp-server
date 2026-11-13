@@ -18,6 +18,7 @@ use App\Entity\User;
 use App\Repository\ActivityRepository;
 use App\Repository\TimesheetRepository;
 use KimaiPlugin\McpServerBundle\Capacity\ExpectedHours;
+use KimaiPlugin\McpServerBundle\Capacity\PublicHolidaysInterface;
 use KimaiPlugin\McpServerBundle\Category\TimeCategories;
 use KimaiPlugin\McpServerBundle\Server\ToolHandlerAdapter;
 use KimaiPlugin\McpServerBundle\Support\Args;
@@ -35,6 +36,7 @@ final class LogAbsenceTool extends AbstractWriteTool
         private readonly ExpectedHours $expected,
         private readonly TimesheetRepository $timesheets,
         private readonly ActivityRepository $activities,
+        private readonly ?PublicHolidaysInterface $holidays = null,
     ) {
     }
 
@@ -50,9 +52,10 @@ final class LogAbsenceTool extends AbstractWriteTool
             . 'work contract, or the organisation\'s default week), unless "hours" says otherwise. Days they were not '
             . 'expected to work, and days that already have absence logged, are skipped, so repeating a call logs '
             . 'nothing twice. For yourself, or someone else (user_id) if your Kimai role may log time for others. '
-            . 'The absence type is given by name and matched in the person\'s own absence project. Kimai\'s work '
-            . 'contract does not know public holidays, so leave them out of the range (or log them separately) where '
-            . 'the person does not work them.';
+            . 'The absence type is given by name and matched in the person\'s own absence project. Public holidays '
+            . 'the person has off are skipped where the Weekly Planner is installed (their holiday calendar there); '
+            . 'without it Kimai does not know public holidays, so leave them out of the range where the person does '
+            . 'not work them. The preview lists every day skipped and why.';
     }
 
     protected function getArgumentSchema(): array
@@ -95,6 +98,7 @@ final class LogAbsenceTool extends AbstractWriteTool
         $hours = $arguments['hours'] ?? null;
         $fixed = is_numeric($hours) ? (int) round((float) $hours * 3600) : null;
         $already = $this->daysWithAbsence($owner, $provider->getAbsenceProjectIds(), $from, $to);
+        $holidays = $this->holidays?->between($owner, $from, $to) ?? [];
         $start = $this->writer->defaultStart();
         $description = Args::string($arguments, 'description');
 
@@ -105,6 +109,10 @@ final class LogAbsenceTool extends AbstractWriteTool
             $key = $day->format('Y-m-d');
             if (isset($already[$key])) {
                 $skipped[] = ['date' => $key, 'reason' => 'absence already logged'];
+                continue;
+            }
+            if (isset($holidays[$key])) {
+                $skipped[] = ['date' => $key, 'reason' => 'public holiday: ' . $holidays[$key]];
                 continue;
             }
             [$expected] = $this->expected->forDay($owner, $day);
