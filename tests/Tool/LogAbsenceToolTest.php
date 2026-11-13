@@ -144,10 +144,9 @@ class LogAbsenceToolTest extends TestCase
         return new LogAbsenceTool(
             $writer,
             new TimeCategories([$categories], (new \ReflectionClass(DefaultTimeCategoryProvider::class))->newInstanceWithoutConstructor()),
-            new ExpectedHours($workingTime, new WorkingCapacity([$week])),
+            new ExpectedHours($workingTime, new WorkingCapacity([$week]), $calendar),
             $timesheets,
             $activities,
-            $calendar,
         );
     }
 

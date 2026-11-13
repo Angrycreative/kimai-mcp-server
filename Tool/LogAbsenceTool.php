@@ -18,7 +18,6 @@ use App\Entity\User;
 use App\Repository\ActivityRepository;
 use App\Repository\TimesheetRepository;
 use KimaiPlugin\McpServerBundle\Capacity\ExpectedHours;
-use KimaiPlugin\McpServerBundle\Capacity\PublicHolidaysInterface;
 use KimaiPlugin\McpServerBundle\Category\TimeCategories;
 use KimaiPlugin\McpServerBundle\Server\ToolHandlerAdapter;
 use KimaiPlugin\McpServerBundle\Support\Args;
@@ -36,7 +35,6 @@ final class LogAbsenceTool extends AbstractWriteTool
         private readonly ExpectedHours $expected,
         private readonly TimesheetRepository $timesheets,
         private readonly ActivityRepository $activities,
-        private readonly ?PublicHolidaysInterface $holidays = null,
     ) {
     }
 
@@ -98,7 +96,6 @@ final class LogAbsenceTool extends AbstractWriteTool
         $hours = $arguments['hours'] ?? null;
         $fixed = is_numeric($hours) ? (int) round((float) $hours * 3600) : null;
         $already = $this->daysWithAbsence($owner, $provider->getAbsenceProjectIds(), $from, $to);
-        $holidays = $this->holidays?->between($owner, $from, $to) ?? [];
         $start = $this->writer->defaultStart();
         $description = Args::string($arguments, 'description');
 
@@ -111,8 +108,9 @@ final class LogAbsenceTool extends AbstractWriteTool
                 $skipped[] = ['date' => $key, 'reason' => 'absence already logged'];
                 continue;
             }
-            if (isset($holidays[$key])) {
-                $skipped[] = ['date' => $key, 'reason' => 'public holiday: ' . $holidays[$key]];
+            $holiday = $this->expected->holiday($owner, $day);
+            if ($holiday !== null) {
+                $skipped[] = ['date' => $key, 'reason' => 'public holiday: ' . $holiday];
                 continue;
             }
             [$expected] = $this->expected->forDay($owner, $day);

@@ -51,8 +51,9 @@ final class UtilisationTool extends AbstractReadTool
         return 'Logged time against each person\'s work contract in a period: contract hours, absence, the hours '
             . 'left to work (contract minus absence), hours worked, billable hours, and the shares between them. '
             . 'A period reaching past today is counted up to today. Contract hours come from Kimai\'s work '
-            . 'contract, which does not know public holidays. People without one are counted on the organisation\'s default '
-            . 'week where one is configured (flagged default_week), otherwise flagged no_work_contract.';
+            . 'contract, less the public holidays the person has off where the Weekly Planner is installed (their '
+            . 'holiday calendar there). People without a contract are counted on the organisation\'s default week '
+            . 'where one is configured (flagged default_week), otherwise flagged no_work_contract.';
     }
 
     public function getInputSchema(): array

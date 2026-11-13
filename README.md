@@ -60,7 +60,7 @@ Every tool only shows what the calling user may see in Kimai itself, through Kim
 | `time_summary` | Hours grouped by customer, project, activity, user, date, week, month or category, split into billable, exported and not yet invoiced | as above |
 | `uninvoiced_time` | Billable time not yet exported, per customer and project | `view_other_timesheet` |
 | `absence` | Absence per person and type in a period | `view_own_timesheet` or `view_other_timesheet` |
-| `utilisation` | Logged time against each person's work contract (or the organisation's default week, where a plugin supplies one): absence, worked and billable hours and their shares | as above |
+| `utilisation` | Logged time against each person's work contract (or the organisation's default week, where a plugin supplies one), less public holidays where the Weekly Planner is installed: absence, worked and billable hours and their shares | as above |
 | `project_budget`, `customer_budget` | A budget, used and remaining, monthly or in total, as on the entity's page in Kimai | the budget permission (global or team) |
 | `budget_overview` | Every project with a budget, closest to running out first | as above |
 
@@ -81,7 +81,7 @@ Every write tool also needs `mcp_write`, and the server enforces confirmation fo
 
 ### Weekly Planner tools
 
-Registered only when [PlannerBundle](https://github.com/happiness/PlannerBundle) is installed. They see and change exactly what the planner's own rules allow: its user list (including plugins that leave people out) and its voter, so reserved time still needs `plan_reservations_planner`. With it, `log_absence` also skips the public holidays in each person's holiday calendar.
+Registered only when [PlannerBundle](https://github.com/happiness/PlannerBundle) is installed. They see and change exactly what the planner's own rules allow: its user list (including plugins that leave people out) and its voter, so reserved time still needs `plan_reservations_planner`. With it, each person's holiday calendar also counts: `log_absence` skips the public holidays they have off, and `utilisation` expects no hours on them.
 
 | Tool | Does | Needs |
 | :--- | :--- | :--- |
