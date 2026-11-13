@@ -123,9 +123,18 @@ final class TimesheetWriter
             $entry->setDescription($description);
             $entry->setBillable($billable);
             $entry->setBillableMode($billableMode);
+            $added = [];
             foreach ($entry->getMetaFields() as $field) {
-                // fields Kimai only added for this change were empty before it
-                $field->setValue($meta[spl_object_id($field)] ?? null);
+                if (\array_key_exists(spl_object_id($field), $meta)) {
+                    $field->setValue($meta[spl_object_id($field)]);
+                } else {
+                    $added[] = $field;
+                }
+            }
+            // added for this change only (with its default, if it has one): gone again, so the confirmed change adds
+            // it afresh with the same default the preview was validated with
+            foreach ($added as $field) {
+                $entry->getMetaFields()->removeElement($field);
             }
         };
     }

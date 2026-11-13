@@ -16,7 +16,9 @@ use App\Entity\Activity;
 use App\Entity\Customer;
 use App\Entity\Project;
 use App\Entity\Timesheet;
+use App\Entity\TimesheetMeta;
 use App\Entity\User;
+use App\Event\TimesheetMetaDefinitionEvent;
 use App\Repository\ActivityRepository;
 use App\Repository\ProjectRepository;
 use App\Repository\TimesheetRepository;
@@ -100,7 +102,7 @@ class TimesheetCorrectionTest extends TestCase
      * @param array<string, list<string>> $permissions
      * @param list<Project> $projects
      */
-    private function writer(Timesheet $entry, array $permissions, AuthorizationCheckerInterface &$auth = null, array $projects = []): TimesheetWriter
+    private function writer(Timesheet $entry, array $permissions, AuthorizationCheckerInterface &$auth = null, array $projects = [], ?EventDispatcherInterface $dispatcher = null): TimesheetWriter
     {
         $auth = Kimai::auth($this->user, $permissions);
 
@@ -143,7 +145,7 @@ class TimesheetCorrectionTest extends TestCase
             $activities,
             $none(SystemConfiguration::class),
             $timesheets,
-            $this->createMock(EventDispatcherInterface::class),
+            $dispatcher ?? $this->createMock(EventDispatcherInterface::class),
         );
     }
 
@@ -151,9 +153,9 @@ class TimesheetCorrectionTest extends TestCase
      * @param array<string, list<string>> $permissions
      * @param list<Project> $projects
      */
-    private function update(Timesheet $entry, array $permissions = self::OWN, array $projects = []): UpdateTimesheetTool
+    private function update(Timesheet $entry, array $permissions = self::OWN, array $projects = [], ?EventDispatcherInterface $dispatcher = null): UpdateTimesheetTool
     {
-        $writer = $this->writer($entry, $permissions, $auth, $projects);
+        $writer = $this->writer($entry, $permissions, $auth, $projects, $dispatcher);
         \assert($auth instanceof AuthorizationCheckerInterface);
 
         return new UpdateTimesheetTool($writer, $auth);
@@ -279,5 +281,54 @@ class TimesheetCorrectionTest extends TestCase
         $this->expectExceptionMessage('Kimai does not allow deleting this entry');
 
         (new DeleteTimesheetTool($this->writer($this->entry(), ['ROLE_USER' => ['edit_own_timesheet']])))->call(['id' => 42], $this->user);
+    }
+
+    public function testABreakStaysAndTheHoursAreTheTimeWorked(): void
+    {
+        // 09:00 to 17:00 with an hour's break: 7 hours worked
+        $entry = $this->entry();
+        $entry->setEnd(new \DateTime('2026-11-10 17:00', new \DateTimeZone('Europe/Stockholm')));
+        $entry->setBreak(3600);
+        $entry->setDuration(7 * 3600);
+        $tool = $this->update($entry);
+
+        $moved = $tool->call(['id' => 42, 'date' => '2026-11-11'], $this->user)['would']['change_entry']['after'];
+        $this->assertSame(['09:00', '17:00', 7.0], [$moved['from'], $moved['to'], $moved['hours']]);
+
+        $ended = $tool->call(['id' => 42, 'end' => '15:00'], $this->user)['would']['change_entry']['after'];
+        $this->assertSame(5.0, $ended['hours']);
+
+        $arguments = ['id' => 42, 'hours' => 2];
+        $preview = $tool->call($arguments, $this->user);
+        $tool->call($arguments + ['user_confirmed' => true, 'preview_token' => $preview['preview_token']], $this->user);
+        $this->assertSame('12:00', $entry->getEnd()?->format('H:i'));
+        // what Kimai works out on save, end - begin - break, is what the preview promised
+        $this->assertSame(2 * 3600, $entry->getCalculatedDuration());
+        $this->assertSame(2 * 3600, $entry->getDuration());
+    }
+
+    public function testACustomFieldAddedForThePreviewIsGoneAfterItAndKeepsItsDefaultWhenConfirmed(): void
+    {
+        $entry = $this->entry();
+        $entry->setMetaField((new TimesheetMeta())->setName('ticket')->setValue('AN-1')->setIsVisible(true));
+        // what Kimai's custom fields add to a saved entry: the fields it lacks, with their defaults
+        $dispatcher = $this->createMock(EventDispatcherInterface::class);
+        $dispatcher->method('dispatch')->willReturnCallback(static function (object $event): object {
+            if ($event instanceof TimesheetMetaDefinitionEvent && $event->getEntity()->getMetaField('team') === null) {
+                $event->getEntity()->setMetaField((new TimesheetMeta())->setName('team')->setValue('Web')->setIsVisible(true));
+            }
+
+            return $event;
+        });
+        $tool = $this->update($entry, self::OWN, [], $dispatcher);
+
+        $arguments = ['id' => 42, 'custom_fields' => ['ticket' => 'AN-2']];
+        $preview = $tool->call($arguments, $this->user);
+        $this->assertNull($entry->getMetaField('team'));
+        $this->assertSame('AN-1', $entry->getMetaField('ticket')?->getValue());
+
+        $tool->call($arguments + ['user_confirmed' => true, 'preview_token' => $preview['preview_token']], $this->user);
+        $this->assertSame('AN-2', $entry->getMetaField('ticket')?->getValue());
+        $this->assertSame('Web', $entry->getMetaField('team')?->getValue());
     }
 }

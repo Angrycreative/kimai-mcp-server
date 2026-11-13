@@ -180,17 +180,22 @@ final class UpdateTimesheetTool extends AbstractWriteTool
             $begin->setTime((int) $old->format('H'), (int) $old->format('i'), (int) $old->format('s'));
         }
 
+        // Kimai counts the time worked as end - begin - break, and works it out again on save: the break stays, and
+        // the hours are the time worked
+        $break = $entry->getBreak();
         $seconds = match (true) {
             is_numeric($hours) => (int) round((float) $hours * 3600),
-            $end !== null => $this->writer->at($owner, $date, $end)->getTimestamp() - $begin->getTimestamp(),
+            $end !== null => $this->writer->at($owner, $date, $end)->getTimestamp() - $begin->getTimestamp() - $break,
             default => (int) $entry->getDuration(),
         };
         if ($seconds <= 0) {
-            throw new ToolException('The entry has to end after it starts, on the same day.');
+            throw new ToolException($break > 0
+                ? 'The entry has to end after it starts and its break, on the same day.'
+                : 'The entry has to end after it starts, on the same day.');
         }
 
         $entry->setBegin($begin);
-        $entry->setEnd((clone $begin)->modify('+' . $seconds . ' seconds'));
+        $entry->setEnd((clone $begin)->modify('+' . ($seconds + $break) . ' seconds'));
         $entry->setDuration($seconds);
     }
 
