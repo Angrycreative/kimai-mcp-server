@@ -49,10 +49,13 @@ final class UtilisationTool extends AbstractReadTool
     public function getDescription(): string
     {
         return 'Logged time against each person\'s work contract in a period: contract hours, absence, the hours '
-            . 'left to work (contract minus absence), hours worked, billable hours, and the shares between them. '
+            . 'left to work (contract minus absence on days they were expected to work), hours worked, billable '
+            . 'hours, and the shares between them. Absence on days without contract hours, such as a bank holiday '
+            . 'logged as absence, is shown as absence_hours_beyond_expected and takes nothing off. '
             . 'A period reaching past today is counted up to today. Contract hours come from Kimai\'s work '
-            . 'contract, which does not know public holidays. People without one are counted on the organisation\'s default '
-            . 'week where one is configured (flagged default_week), otherwise flagged no_work_contract.';
+            . 'contract, less the public holidays the person has off where the Weekly Planner is installed (their '
+            . 'holiday calendar there). People without a contract are counted on the organisation\'s default week '
+            . 'where one is configured (flagged default_week), otherwise flagged no_work_contract.';
     }
 
     public function getInputSchema(): array
@@ -96,11 +99,15 @@ final class UtilisationTool extends AbstractReadTool
 
         /** @var array<int, array{absence: float, worked: float, billable: float}> $logged */
         $logged = [];
-        foreach ($this->summary->rows($this->scope->query($arguments, $user), ['user', 'category']) as $row) {
+        /** @var array<int, array<string, float>> $absenceByDay hours of absence per person and day */
+        $absenceByDay = [];
+        foreach ($this->summary->rows($this->scope->query($arguments, $user), ['user', 'category', 'date']) as $row) {
             $id = (int) $row->userId;
             $logged[$id] ??= ['absence' => 0.0, 'worked' => 0.0, 'billable' => 0.0];
             if ($row->category === TimeCategoryProviderInterface::ABSENCE) {
                 $logged[$id]['absence'] += $row->hours();
+                $day = \is_string($row->group['date'] ?? null) ? $row->group['date'] : '';
+                $absenceByDay[$id][$day] = ($absenceByDay[$id][$day] ?? 0.0) + $row->hours();
             } else {
                 $logged[$id]['worked'] += $row->hours();
                 $logged[$id]['billable'] += $row->billableHours();
@@ -128,9 +135,16 @@ final class UtilisationTool extends AbstractReadTool
                 continue;
             }
 
-            [$contractSeconds, $basis] = $this->contract($person, $from, $to);
+            [$contractSeconds, $basis, $expectedByDay] = $this->contract($person, $from, $to);
             $contract = Format::hours($contractSeconds);
-            $available = max(0.0, round($contract - $time['absence'], 2));
+            // absence only takes off the hours expected that day: absence logged on a public holiday or a weekend
+            // (as many log bank holidays) is not time they were meant to work
+            $absenceOnWorkingDays = 0.0;
+            foreach ($absenceByDay[(int) $person->getId()] ?? [] as $day => $hours) {
+                $absenceOnWorkingDays += min($hours, Format::hours($expectedByDay[$day] ?? 0));
+            }
+            $available = max(0.0, round($contract - $absenceOnWorkingDays, 2));
+            $daysOff = round($time['absence'] - $absenceOnWorkingDays, 2);
             $row = \array_slice($row, 0, 1, true) + [
                 'contract_hours' => $contract,
                 'available_hours' => $available,
@@ -138,6 +152,9 @@ final class UtilisationTool extends AbstractReadTool
                 'worked_percent_of_available' => Format::percent($time['worked'], $available),
                 'billable_percent_of_available' => Format::percent($time['billable'], $available),
             ];
+            if ($daysOff > 0 && $basis !== self::BASIS_NONE) {
+                $row['absence_hours_beyond_expected'] = $daysOff;
+            }
             if ($basis === self::BASIS_DEFAULT) {
                 $row['default_week'] = true;
                 $defaultUsed = true;
@@ -200,30 +217,32 @@ final class UtilisationTool extends AbstractReadTool
     }
 
     /**
-     * Expected seconds from the first to the last day: from the person's contract, else from the capacity provider,
-     * else none.
+     * Expected seconds from the first to the last day, in total and per day: from the person's contract, else from
+     * the capacity provider, else none.
      *
-     * @return array{0: int, 1: string}
+     * @return array{0: int, 1: string, 2: array<string, int>}
      */
     private function contract(User $person, \DateTimeImmutable $from, \DateTimeImmutable $to): array
     {
         $last = $to->format('Y-m-d');
         $seconds = 0;
+        $byDay = [];
         $basis = ExpectedHours::NONE;
         // midday, so a step of one day never lands on the same date twice across a daylight saving change
         for ($day = $from->setTime(12, 0); $day->format('Y-m-d') <= $last; $day = $day->modify('+1 day')) {
             [$forDay, $dayBasis] = $this->expected->forDay($person, $day);
             if ($forDay === null) {
-                return [0, self::BASIS_NONE];
+                return [0, self::BASIS_NONE, []];
             }
             $seconds += $forDay;
+            $byDay[$day->format('Y-m-d')] = $forDay;
             $basis = $dayBasis;
         }
 
         return match ($basis) {
-            ExpectedHours::CONTRACT => [$seconds, self::BASIS_CONTRACT],
-            ExpectedHours::DEFAULT => [$seconds, self::BASIS_DEFAULT],
-            default => [0, self::BASIS_NONE],
+            ExpectedHours::CONTRACT => [$seconds, self::BASIS_CONTRACT, $byDay],
+            ExpectedHours::DEFAULT => [$seconds, self::BASIS_DEFAULT, $byDay],
+            default => [0, self::BASIS_NONE, []],
         };
     }
 }

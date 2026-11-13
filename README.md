@@ -60,7 +60,7 @@ Every tool only shows what the calling user may see in Kimai itself, through Kim
 | `time_summary` | Hours grouped by customer, project, activity, user, date, week, month or category, split into billable, exported and not yet invoiced | as above |
 | `uninvoiced_time` | Billable time not yet exported, per customer and project | `view_other_timesheet` |
 | `absence` | Absence per person and type in a period | `view_own_timesheet` or `view_other_timesheet` |
-| `utilisation` | Logged time against each person's work contract (or the organisation's default week, where a plugin supplies one): absence, worked and billable hours and their shares | as above |
+| `utilisation` | Logged time against each person's work contract (or the organisation's default week, where a plugin supplies one), less public holidays where the Weekly Planner is installed: absence, worked and billable hours and their shares. Absence only takes off hours on days the person was expected to work, so a bank holiday logged as absence is shown but counted once | as above |
 | `project_budget`, `customer_budget` | A budget, used and remaining, monthly or in total, as on the entity's page in Kimai | the budget permission (global or team) |
 | `budget_overview` | Every project with a budget, closest to running out first | as above |
 
@@ -68,18 +68,20 @@ Amounts appear only where you may see rates, and only per customer currency.
 
 ### Tools that change data
 
-Every write tool also needs `mcp_write`, and the server enforces confirmation for every client: called without `user_confirmed: true`, a write tool changes nothing and returns a preview of exactly what would happen, for the model to describe and ask about. The confirming call must carry the preview's `preview_token`, and saves only if the change worked out again is still the one previewed; otherwise it returns the new preview. A tool that saves several records saves all of them or none. Everything is checked before the preview, Kimai's own validation included, so a preview that reads fine is a change that goes through. No tool sets or clears the invoiced (exported) flag.
+Every write tool also needs `mcp_write`, and the server enforces confirmation for every client: called without `user_confirmed: true`, a write tool changes nothing and returns a preview of exactly what would happen, for the model to describe and ask about. The confirming call must carry the preview's `preview_token`, and saves only if the change worked out again is still the one previewed; otherwise it returns the new preview. A tool that saves several records saves all of them or none. Everything is checked before the preview, Kimai's own validation included, so a preview that reads fine is a change that goes through. No tool sets or clears the invoiced (exported) flag, and no tool changes or deletes invoiced time or another person's entries, whatever the role allows: correcting those stays in Kimai, where the people who handle invoicing see it.
 
 | Tool | Does | Needs |
 | :--- | :--- | :--- |
 | `log_time` | Creates one entry, for yourself or someone else, through Kimai's own timesheet service (locked weeks, overlaps, required custom fields and rates all apply) | `create_own_timesheet`, or `create_other_timesheet` for others |
-| `log_absence` | Logs absence for a day or a range, one entry per working day at the hours the person was expected to work, on their own absence project; the type is given by name. Days already holding absence are skipped, so a repeat logs nothing twice | as above |
+| `log_absence` | Logs absence for a day or a range, one entry per working day at the hours the person was expected to work, on their own absence project; the type is given by name. Days already holding absence are skipped, so a repeat logs nothing twice, and so are the public holidays the person has off when the Weekly Planner is installed (its holiday calendar), unless `public_holidays` asks to log the holidays themselves, for a type such as "Bank holiday" | as above |
+| `update_timesheet` | Corrects one of your own entries: project, activity, day, times, description, billable or custom fields. Only what is given changes: a new day keeps the start time and hours, a new start keeps the hours | `edit_own_timesheet` |
+| `delete_timesheet` | Deletes one of your own entries, such as a duplicate | `delete_own_timesheet` |
 | `archive_customer` | Hides a customer and its visible projects. Refuses while billable time is not yet invoiced, unless told to go ahead | `edit_customer`, `edit_project` |
 | `archive_project` | The same for one project | `edit_project` |
 
 ### Weekly Planner tools
 
-Registered only when [PlannerBundle](https://github.com/happiness/PlannerBundle) is installed. They see and change exactly what the planner's own rules allow: its user list (including plugins that leave people out) and its voter, so reserved time still needs `plan_reservations_planner`.
+Registered only when [PlannerBundle](https://github.com/happiness/PlannerBundle) is installed. They see and change exactly what the planner's own rules allow: its user list (including plugins that leave people out) and its voter, so reserved time still needs `plan_reservations_planner`. With it, each person's holiday calendar also counts: `log_absence` skips the public holidays they have off, and `utilisation` expects no hours on them.
 
 | Tool | Does | Needs |
 | :--- | :--- | :--- |
