@@ -60,7 +60,7 @@ Every tool only shows what the calling user may see in Kimai itself, through Kim
 | `time_summary` | Hours grouped by customer, project, activity, user, date, week, month or category, split into billable, exported and not yet invoiced | as above |
 | `uninvoiced_time` | Billable time not yet exported, per customer and project | `view_other_timesheet` |
 | `absence` | Absence per person and type in a period | `view_own_timesheet` or `view_other_timesheet` |
-| `utilisation` | Logged time against each person's work contract (or the organisation's default week, where a plugin supplies one), less public holidays where the Weekly Planner is installed: absence, worked and billable hours and their shares | as above |
+| `utilisation` | Logged time against each person's work contract (or the organisation's default week, where a plugin supplies one), less public holidays where the Weekly Planner is installed: absence, worked and billable hours and their shares. Absence only takes off hours on days the person was expected to work, so a bank holiday logged as absence is shown but counted once | as above |
 | `project_budget`, `customer_budget` | A budget, used and remaining, monthly or in total, as on the entity's page in Kimai | the budget permission (global or team) |
 | `budget_overview` | Every project with a budget, closest to running out first | as above |
 
@@ -73,7 +73,7 @@ Every write tool also needs `mcp_write`, and the server enforces confirmation fo
 | Tool | Does | Needs |
 | :--- | :--- | :--- |
 | `log_time` | Creates one entry, for yourself or someone else, through Kimai's own timesheet service (locked weeks, overlaps, required custom fields and rates all apply) | `create_own_timesheet`, or `create_other_timesheet` for others |
-| `log_absence` | Logs absence for a day or a range, one entry per working day at the hours the person was expected to work, on their own absence project; the type is given by name. Days already holding absence are skipped, so a repeat logs nothing twice, and so are the public holidays the person has off when the Weekly Planner is installed (its holiday calendar) | as above |
+| `log_absence` | Logs absence for a day or a range, one entry per working day at the hours the person was expected to work, on their own absence project; the type is given by name. Days already holding absence are skipped, so a repeat logs nothing twice, and so are the public holidays the person has off when the Weekly Planner is installed (its holiday calendar), unless `public_holidays` asks to log the holidays themselves, for a type such as "Bank holiday" | as above |
 | `update_timesheet` | Corrects one of your own entries: project, activity, day, times, description, billable or custom fields. Only what is given changes: a new day keeps the start time and hours, a new start keeps the hours | `edit_own_timesheet` |
 | `delete_timesheet` | Deletes one of your own entries, such as a duplicate | `delete_own_timesheet` |
 | `archive_customer` | Hides a customer and its visible projects. Refuses while billable time is not yet invoiced, unless told to go ahead | `edit_customer`, `edit_project` |

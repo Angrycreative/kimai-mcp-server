@@ -62,10 +62,12 @@ final class ExpectedHours
     }
 
     /**
+     * @param bool $ignoreHoliday what the day would expect if it were not a public holiday, e.g. to log the holiday
+     *                            itself as absence
      * @return array{0: int|null, 1: self::CONTRACT|self::DEFAULT|self::NONE} seconds (null when unknown) and where
      *                                                                        the figure came from
      */
-    public function forDay(User $user, \DateTimeInterface $day): array
+    public function forDay(User $user, \DateTimeInterface $day, bool $ignoreHoliday = false): array
     {
         $key = $day->format('Y-m-d');
         $start = $user->getWorkStartingDay()?->format('Y-m-d');
@@ -75,7 +77,7 @@ final class ExpectedHours
         if ($calculator !== null) {
             $outside = ($start !== null && $key < $start) || ($end !== null && $key > $end);
 
-            return [$outside || $this->holiday($user, $day) !== null ? 0 : $calculator->getWorkHoursForDay($day), self::CONTRACT];
+            return [$outside || (!$ignoreHoliday && $this->holiday($user, $day) !== null) ? 0 : $calculator->getWorkHoursForDay($day), self::CONTRACT];
         }
 
         $provider = $this->capacity->provider();
@@ -85,7 +87,7 @@ final class ExpectedHours
         }
         $outside = ($start !== null && $key < $start) || ($end !== null && $key > $end);
 
-        return [$outside || $this->holiday($user, $day) !== null ? 0 : max(0, $seconds), self::DEFAULT];
+        return [$outside || (!$ignoreHoliday && $this->holiday($user, $day) !== null) ? 0 : max(0, $seconds), self::DEFAULT];
     }
 
     private function calculator(User $user): ?WorkingTimeCalculator

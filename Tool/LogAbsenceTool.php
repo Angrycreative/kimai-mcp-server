@@ -52,7 +52,8 @@ final class LogAbsenceTool extends AbstractWriteTool
             . 'nothing twice. For yourself, or someone else (user_id) if your Kimai role may log time for others. '
             . 'The absence type is given by name and matched in the person\'s own absence project. Public holidays '
             . 'the person has off are skipped where the Weekly Planner is installed (their holiday calendar there); '
-            . 'without it Kimai does not know public holidays, so leave them out of the range where the person does '
+            . 'to log the holidays themselves, for a type such as "Bank holiday", set public_holidays. Without the '
+            . 'planner Kimai does not know public holidays, so leave them out of the range where the person does '
             . 'not work them. The preview lists every day skipped and why.';
     }
 
@@ -65,6 +66,7 @@ final class LogAbsenceTool extends AbstractWriteTool
             'to' => Schema::date('Last day, inclusive. Default: the same as "from"'),
             'hours' => ['type' => 'number', 'exclusiveMinimum' => 0, 'maximum' => 24, 'description' => 'Hours per day, e.g. 4 for a half day. Default: what the person was expected to work that day'],
             'description' => ['type' => 'string', 'description' => 'An optional note on every entry'],
+            'public_holidays' => ['type' => 'boolean', 'description' => 'Log on the public holidays in the range instead, and only those, at the hours the day would otherwise expect: for absence types that record the holidays themselves, such as "Bank holiday". Default: false, which skips them'],
         ], ['type', 'from']);
     }
 
@@ -98,9 +100,12 @@ final class LogAbsenceTool extends AbstractWriteTool
         $already = $this->daysWithAbsence($owner, $provider->getAbsenceProjectIds(), $from, $to);
         $start = $this->writer->defaultStart();
         $description = Args::string($arguments, 'description');
+        $onHolidays = Args::bool($arguments, 'public_holidays') === true;
 
         /** @var list<Timesheet> $entries */
         $entries = [];
+        /** @var array<int, string|null> $holidays the public holiday each entry falls on, by entry index */
+        $holidays = [];
         $skipped = [];
         for ($day = $from->setTime(12, 0); $day <= $to->setTime(12, 0); $day = $day->modify('+1 day')) {
             $key = $day->format('Y-m-d');
@@ -109,11 +114,15 @@ final class LogAbsenceTool extends AbstractWriteTool
                 continue;
             }
             $holiday = $this->expected->holiday($owner, $day);
-            if ($holiday !== null) {
+            if ($onHolidays && $holiday === null) {
+                $skipped[] = ['date' => $key, 'reason' => 'not a public holiday'];
+                continue;
+            }
+            if (!$onHolidays && $holiday !== null) {
                 $skipped[] = ['date' => $key, 'reason' => 'public holiday: ' . $holiday];
                 continue;
             }
-            [$expected] = $this->expected->forDay($owner, $day);
+            [$expected] = $this->expected->forDay($owner, $day, $onHolidays);
             if ($expected === null && $fixed === null) {
                 throw new ToolException(\sprintf('%s has no work contract, so give "hours" per day.', $owner->getDisplayName()));
             }
@@ -124,6 +133,7 @@ final class LogAbsenceTool extends AbstractWriteTool
                 continue;
             }
 
+            $holidays[\count($entries)] = $holiday;
             $entries[] = $this->writer->build(
                 $owner,
                 $project,
@@ -137,7 +147,12 @@ final class LogAbsenceTool extends AbstractWriteTool
         $summary = [
             'user' => ['id' => $owner->getId(), 'name' => $owner->getDisplayName()],
             'absence' => ['customer' => $project->getCustomer()?->getName(), 'project' => $project->getName(), 'type' => $activity->getName()],
-            'entries' => array_map(fn (Timesheet $entry): array => ['date' => $entry->getBegin()?->format('Y-m-d'), 'from' => $entry->getBegin()?->format('H:i'), 'hours' => Format::hours((int) $entry->getDuration())], $entries),
+            'entries' => array_map(static fn (Timesheet $entry, int $index): array => array_filter([
+                'date' => $entry->getBegin()?->format('Y-m-d'),
+                'from' => $entry->getBegin()?->format('H:i'),
+                'hours' => Format::hours((int) $entry->getDuration()),
+                'public_holiday' => $holidays[$index] ?? null,
+            ], static fn (mixed $value): bool => $value !== null), $entries, array_keys($entries)),
             'total_hours' => Format::hours(array_sum(array_map(static fn (Timesheet $entry): int => (int) $entry->getDuration(), $entries))),
         ];
         if ($skipped !== []) {

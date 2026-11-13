@@ -207,4 +207,19 @@ class LogAbsenceToolTest extends TestCase
 
         $this->assertSame(['2026-12-24', '2026-12-25'], array_column($preview['would']['entries'], 'date'));
     }
+
+    public function testPublicHolidaysLogsTheHolidaysOnlyAtTheHoursTheDayWouldExpect(): void
+    {
+        $preview = $this->tool(['2026-12-24' => 'Christmas Eve', '2026-12-25' => 'Christmas Day', '2026-12-26' => 'Boxing Day'])
+            ->call(['type' => 'Holiday', 'from' => '2026-12-21', 'to' => '2026-12-27', 'public_holidays' => true], $this->user);
+
+        $this->assertSame([
+            ['date' => '2026-12-24', 'from' => '08:00', 'hours' => 8.0, 'public_holiday' => 'Christmas Eve'],
+            ['date' => '2026-12-25', 'from' => '08:00', 'hours' => 8.0, 'public_holiday' => 'Christmas Day'],
+        ], $preview['would']['entries']);
+        $skipped = self::skipped($preview);
+        $this->assertSame('not a public holiday', $skipped['2026-12-21']);
+        // Boxing Day is a Saturday: a holiday, but not a day they were expected to work
+        $this->assertSame('not a working day', $skipped['2026-12-26']);
+    }
 }
