@@ -11,15 +11,18 @@ declare(strict_types=1);
 
 namespace KimaiPlugin\McpServerBundle\Tests;
 
+use App\Configuration\SystemConfiguration;
 use App\Doctrine\UTCDateTimeImmutableType;
 use App\Doctrine\UTCDateTimeType;
 use App\Entity\User;
 use App\Security\RolePermissionManager;
+use App\Timesheet\LockdownService;
 use App\User\PermissionService;
 use App\Voter\ActivityVoter;
 use App\Voter\CustomerVoter;
 use App\Voter\ProjectVoter;
 use App\Voter\RolePermissionVoter;
+use App\Voter\TimesheetVoter;
 use App\Voter\UserVoter;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Types\Type;
@@ -59,6 +62,10 @@ final class Kimai
         }
         $manager = new RolePermissionManager($service, $map, $names);
 
+        // no lockdown period configured, as on a fresh install
+        $lockdown = new LockdownService((new \ReflectionClass(SystemConfiguration::class))->newInstanceWithoutConstructor());
+        (new \ReflectionProperty(LockdownService::class, 'isActive'))->setValue($lockdown, false);
+
         $tokens = new TokenStorage();
         $tokens->setToken(new UsernamePasswordToken($user, 'api', $user->getRoles()));
 
@@ -68,6 +75,7 @@ final class Kimai
             new CustomerVoter($manager),
             new ProjectVoter($manager),
             new ActivityVoter($manager),
+            new TimesheetVoter($manager, $lockdown),
         ]));
     }
 

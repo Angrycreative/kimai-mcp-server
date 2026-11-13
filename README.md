@@ -68,12 +68,14 @@ Amounts appear only where you may see rates, and only per customer currency.
 
 ### Tools that change data
 
-Every write tool also needs `mcp_write`, and the server enforces confirmation for every client: called without `user_confirmed: true`, a write tool changes nothing and returns a preview of exactly what would happen, for the model to describe and ask about. The confirming call must carry the preview's `preview_token`, and saves only if the change worked out again is still the one previewed; otherwise it returns the new preview. A tool that saves several records saves all of them or none. Everything is checked before the preview, Kimai's own validation included, so a preview that reads fine is a change that goes through. No tool sets or clears the invoiced (exported) flag.
+Every write tool also needs `mcp_write`, and the server enforces confirmation for every client: called without `user_confirmed: true`, a write tool changes nothing and returns a preview of exactly what would happen, for the model to describe and ask about. The confirming call must carry the preview's `preview_token`, and saves only if the change worked out again is still the one previewed; otherwise it returns the new preview. A tool that saves several records saves all of them or none. Everything is checked before the preview, Kimai's own validation included, so a preview that reads fine is a change that goes through. No tool sets or clears the invoiced (exported) flag, and no tool changes or deletes invoiced time or another person's entries, whatever the role allows: correcting those stays in Kimai, where the people who handle invoicing see it.
 
 | Tool | Does | Needs |
 | :--- | :--- | :--- |
 | `log_time` | Creates one entry, for yourself or someone else, through Kimai's own timesheet service (locked weeks, overlaps, required custom fields and rates all apply) | `create_own_timesheet`, or `create_other_timesheet` for others |
 | `log_absence` | Logs absence for a day or a range, one entry per working day at the hours the person was expected to work, on their own absence project; the type is given by name. Days already holding absence are skipped, so a repeat logs nothing twice | as above |
+| `update_timesheet` | Corrects one of your own entries: project, activity, day, times, description, billable or custom fields. Only what is given changes: a new day keeps the start time and hours, a new start keeps the hours | `edit_own_timesheet` |
+| `delete_timesheet` | Deletes one of your own entries, such as a duplicate | `delete_own_timesheet` |
 | `archive_customer` | Hides a customer and its visible projects. Refuses while billable time is not yet invoiced, unless told to go ahead | `edit_customer`, `edit_project` |
 | `archive_project` | The same for one project | `edit_project` |
 
