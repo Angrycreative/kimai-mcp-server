@@ -2,7 +2,7 @@
 
 An MCP server inside [Kimai](https://www.kimai.org), so Claude and other MCP clients can read logged time, budgets and planning, and make the changes you approve, with Kimai's own permissions deciding what each caller may see and do.
 
-**Status: 0.x.** Read tools for time, absence, utilisation and budgets, write tools for logging time and absence and archiving customers and projects, and Weekly Planner tools. We run it in production at [Angry Creative](https://angrycreative.se); tool names and arguments may still change before 1.0, and every change is in the release notes.
+**Status: 0.x.** Read tools for time, absence, utilisation and budgets, write tools for logging time and absence, timers, correcting your own entries and archiving customers and projects, and Weekly Planner tools. We run it in production at [Angry Creative](https://angrycreative.se); tool names and arguments may still change before 1.0, and every change is in the release notes.
 
 ## Requirements
 
@@ -63,6 +63,7 @@ Every tool only shows what the calling user may see in Kimai itself, through Kim
 | `utilisation` | Logged time against each person's work contract (or the organisation's default week, where a plugin supplies one), less public holidays where the Weekly Planner is installed: absence, worked and billable hours and their shares. Absence only takes off hours on days the person was expected to work, so a bank holiday logged as absence is shown but counted once | as above |
 | `project_budget`, `customer_budget` | A budget, used and remaining, monthly or in total, as on the entity's page in Kimai | the budget permission (global or team) |
 | `budget_overview` | Every project with a budget, closest to running out first | as above |
+| `running_timers` | Your running timers: what you are tracking now, since when, and the hours so far | `view_own_timesheet` |
 
 Amounts appear only where you may see rates, and only per customer currency.
 
@@ -76,8 +77,12 @@ Every write tool also needs `mcp_write`, and the server enforces confirmation fo
 | `log_absence` | Logs absence for a day or a range, one entry per working day at the hours the person was expected to work, on their own absence project; the type is given by name. Days already holding absence are skipped, so a repeat logs nothing twice, and so are the public holidays the person has off when the Weekly Planner is installed (its holiday calendar), unless `public_holidays` asks to log the holidays themselves, for a type such as "Bank holiday" | as above |
 | `update_timesheet` | Corrects one of your own entries: project, activity, day, times, description, billable or custom fields. Only what is given changes: a new day keeps the start time and hours, a new start keeps the hours | `edit_own_timesheet` |
 | `delete_timesheet` | Deletes one of your own entries, such as a duplicate | `delete_own_timesheet` |
+| `start_timer` | Starts a timer for you, now or from a time earlier today. Kimai allows a limited number of running timers (usually one), so starting one stops the oldest: the preview says which, and it ends exactly where the new one starts. A start time that would overlap a running timer or an entry already logged is refused at once, as Kimai's own check would only find the overlap when the timer is stopped. An entry later today is a warning: stop the timer before it starts | `start_own_timesheet` |
+| `stop_timer` | Stops your running timer, now or at an earlier time (the first such time after it started, so past midnight works), optionally with a new description. An end time or a description is an edit, as in Kimai's edit form, so it also needs the edit permission and an unlocked period | `stop_own_timesheet` (`edit_own_timesheet` with `end` or `description`) |
 | `archive_customer` | Hides a customer and its visible projects. Refuses while billable time is not yet invoiced, unless told to go ahead | `edit_customer`, `edit_project` |
 | `archive_project` | The same for one project | `edit_project` |
+
+Timers start and stop on the minute that has begun, in the person's timezone, and a timer started "now" in a preview starts when it is confirmed. Kimai's own stop takes the current second and rounds an end up to the minute while a start is rounded down, so a timer started in the same minute another stops would overlap it, and could then never be stopped ("You already have an entry for this time"). On the minute, an end and the next start are the same moment. Stopping still goes through Kimai's validation and dispatches its stop events, and the preview runs that validation on every stop it would make, so a timer in a locked period, one running too long or one stopped in the minute it started is refused before anything changes. Where Kimai's rounding rules would move a stopped timer's end past the new timer's start, starting is refused rather than leaving a timer that cannot be stopped.
 
 ### Weekly Planner tools
 

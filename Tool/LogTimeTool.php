@@ -48,7 +48,7 @@ final class LogTimeTool extends AbstractWriteTool
             'end' => ['type' => 'string', 'pattern' => '^\d{1,2}:\d{2}$', 'description' => 'End time, HH:MM, on the same day. Give this or "hours"'],
             'description' => ['type' => 'string', 'description' => 'What was done'],
             'billable' => ['type' => 'boolean', 'description' => 'Only if the person said so; otherwise leave it out and Kimai decides from the customer, project and activity'],
-            'custom_fields' => ['type' => 'object', 'additionalProperties' => ['type' => ['string', 'number', 'boolean']], 'description' => 'Custom field values by field name, e.g. {"youtrack_issue_key": "AN-176"}'],
+            'custom_fields' => Schema::customFields(),
         ], ['project_id', 'activity_id', 'date']);
     }
 
@@ -78,8 +78,7 @@ final class LogTimeTool extends AbstractWriteTool
             throw new ToolException('The entry has to end after it starts, on the same day.');
         }
 
-        /** @var array<string, mixed> $fields */
-        $fields = \is_array($arguments['custom_fields'] ?? null) ? $arguments['custom_fields'] : [];
+        $fields = Args::customFields($arguments);
         $timesheet = $this->writer->build(
             $owner,
             $project,

@@ -23,6 +23,7 @@ use App\Repository\ActivityRepository;
 use App\Repository\ProjectRepository;
 use App\Repository\TimesheetRepository;
 use App\Repository\UserRepository;
+use App\Timesheet\RoundingService;
 use App\Timesheet\TimesheetService;
 use App\Timesheet\TrackingModeService;
 use KimaiPlugin\McpServerBundle\Support\TimesheetWriter;
@@ -146,6 +147,7 @@ class TimesheetCorrectionTest extends TestCase
             $none(SystemConfiguration::class),
             $timesheets,
             $dispatcher ?? $this->createMock(EventDispatcherInterface::class),
+            $none(RoundingService::class),
         );
     }
 

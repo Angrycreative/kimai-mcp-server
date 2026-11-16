@@ -48,6 +48,16 @@ final class Schema
     }
 
     /**
+     * Custom field values by field name, as log_time, start_timer and update_timesheet take them.
+     *
+     * @return array<string, mixed>
+     */
+    public static function customFields(string $description = 'Custom field values by field name'): array
+    {
+        return ['type' => 'object', 'additionalProperties' => ['type' => ['string', 'number', 'boolean']], 'description' => $description . ', e.g. {"youtrack_issue_key": "AN-176"}'];
+    }
+
+    /**
      * @return array<string, mixed>
      */
     public static function id(string $description): array
