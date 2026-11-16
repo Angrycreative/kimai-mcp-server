@@ -57,7 +57,7 @@ final class UpdateTimesheetTool extends AbstractWriteTool
             'end' => ['type' => 'string', 'pattern' => '^\d{1,2}:\d{2}$', 'description' => 'New end time, HH:MM, on the same day. Give this or "hours"'],
             'description' => ['type' => 'string', 'description' => 'The new description. An empty string clears it'],
             'billable' => ['type' => 'boolean', 'description' => 'Only if the person asked to change it'],
-            'custom_fields' => ['type' => 'object', 'additionalProperties' => ['type' => ['string', 'number', 'boolean']], 'description' => 'Custom field values to set, by field name, e.g. {"youtrack_issue_key": "AN-176"}'],
+            'custom_fields' => Schema::customFields('Custom field values to set, by field name'),
         ], ['id']);
     }
 
@@ -69,8 +69,7 @@ final class UpdateTimesheetTool extends AbstractWriteTool
     protected function plan(array $arguments, User $user): WritePlan
     {
         $entry = $this->writer->ownEntry((int) Args::int($arguments, 'id'), $user, 'edit');
-        /** @var array<string, mixed> $fields */
-        $fields = \is_array($arguments['custom_fields'] ?? null) ? $arguments['custom_fields'] : [];
+        $fields = Args::customFields($arguments);
 
         $before = $this->describe($entry, $arguments, $fields);
         $restore = $this->writer->snapshot($entry);

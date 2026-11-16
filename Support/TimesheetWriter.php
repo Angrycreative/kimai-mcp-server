@@ -23,6 +23,7 @@ use App\Repository\ActivityRepository;
 use App\Repository\ProjectRepository;
 use App\Repository\TimesheetRepository;
 use App\Repository\UserRepository;
+use App\Timesheet\RoundingService;
 use App\Timesheet\TimesheetService;
 use App\Validator\ValidationFailedException;
 use KimaiPlugin\McpServerBundle\Tool\ToolException;
@@ -48,6 +49,7 @@ final class TimesheetWriter
         private readonly SystemConfiguration $configuration,
         private readonly TimesheetRepository $timesheets,
         private readonly EventDispatcherInterface $dispatcher,
+        private readonly RoundingService $roundings,
     ) {
     }
 
@@ -70,7 +72,7 @@ final class TimesheetWriter
             throw new ToolException('This entry has been invoiced (exported), so it cannot be changed here: that would change an invoice. Ask whoever handles invoicing.');
         }
         if ($attribute === 'edit' && $entry->isRunning()) {
-            throw new ToolException('This entry is still running. Stop it in Kimai first, then correct it.');
+            throw new ToolException('This entry is still running. Stop it with stop_timer, which can also set when it ended and its description, then correct it.');
         }
         if (!$this->auth->isGranted($attribute, $entry)) {
             throw new ToolException(\sprintf(
@@ -287,16 +289,9 @@ final class TimesheetWriter
             throw new ToolException('The duration must be more than zero.');
         }
 
-        $timesheet = $this->service->createNewTimesheet($owner);
-        $this->service->prepareNewTimesheet($timesheet);
-        $timesheet->setProject($project);
-        $timesheet->setActivity($activity);
-        $timesheet->setBegin(clone $begin);
+        $timesheet = $this->compose($owner, $project, $activity, $begin, $description, $customFields);
         $timesheet->setEnd((clone $begin)->modify('+' . $seconds . ' seconds'));
         $timesheet->setDuration($seconds);
-        if ($description !== null && $description !== '') {
-            $timesheet->setDescription($description);
-        }
 
         if ($billable !== null) {
             if (!$this->auth->isGranted('edit_billable', $timesheet)) {
@@ -305,8 +300,6 @@ final class TimesheetWriter
             $timesheet->setBillableMode($billable ? Timesheet::BILLABLE_YES : Timesheet::BILLABLE_NO);
             $timesheet->setBillable($billable);
         }
-
-        $this->setCustomFields($timesheet, $customFields);
 
         $this->check($timesheet);
 
@@ -324,13 +317,13 @@ final class TimesheetWriter
     }
 
     /**
-     * The person's finished entries that start after $from and before now, when Kimai refuses overlapping entries: a
-     * timer started at $from would overlap them once it is stopped. Kimai's own overlap check does not see that
-     * coming, as it passes a running entry.
+     * The person's finished entries starting from $from up to $until, when Kimai refuses overlapping entries. A timer
+     * running from $from overlaps each of them once it is stopped after its start, and Kimai's own overlap check does
+     * not see that coming, as it passes a running entry.
      *
      * @return list<Timesheet> by start
      */
-    public function entriesAfter(User $user, \DateTime $from): array
+    public function entriesBetween(User $user, \DateTime $from, \DateTime $until): array
     {
         if ($this->configuration->isTimesheetAllowOverlappingRecords()) {
             return [];
@@ -341,10 +334,10 @@ final class TimesheetWriter
             ->where('t.user = :user')
             ->andWhere('t.end IS NOT NULL')
             ->andWhere('t.begin >= :from')
-            ->andWhere('t.begin < :now')
+            ->andWhere('t.begin < :until')
             ->setParameter('user', $user)
             ->setParameter('from', $from)
-            ->setParameter('now', new \DateTime())
+            ->setParameter('until', $until)
             ->orderBy('t.begin', 'ASC')
             ->getQuery()
             ->getResult();
@@ -369,15 +362,7 @@ final class TimesheetWriter
      */
     public function timer(User $owner, Project $project, Activity $activity, \DateTime $begin, ?string $description = null, array $customFields = []): Timesheet
     {
-        $timesheet = $this->service->createNewTimesheet($owner);
-        $this->service->prepareNewTimesheet($timesheet);
-        $timesheet->setProject($project);
-        $timesheet->setActivity($activity);
-        $timesheet->setBegin(clone $begin);
-        if ($description !== null && $description !== '') {
-            $timesheet->setDescription($description);
-        }
-        $this->setCustomFields($timesheet, $customFields);
+        $timesheet = $this->compose($owner, $project, $activity, $begin, $description, $customFields);
 
         if (!$this->auth->isGranted('start', $timesheet)) {
             throw new ToolException(\sprintf(
@@ -419,6 +404,42 @@ final class TimesheetWriter
         $now = new \DateTime('now', new \DateTimeZone($user->getTimezone()));
 
         return $now->setTime((int) $now->format('H'), (int) $now->format('i'));
+    }
+
+    /**
+     * Checks stopping a running entry at $end as Kimai would, without stopping it, and returns the end Kimai would
+     * store: its rounding rules can move an end later than the moment it was stopped.
+     *
+     * @throws ToolException
+     */
+    public function trialStop(Timesheet $timesheet, \DateTime $end): \DateTime
+    {
+        $begin = $timesheet->getBegin();
+        // stopped in the minute it started: no time, or less than none when it started on a second Kimai kept
+        $sameMinute = $begin !== null && intdiv($end->getTimestamp(), 60) === intdiv($begin->getTimestamp(), 60);
+        if ($sameMinute && ($end < $begin || !$this->configuration->isTimesheetAllowZeroDuration())) {
+            throw new ToolException(\sprintf(
+                'The timer on %s started at %s, so stopping it at %s would leave an entry of no time, which Kimai does not allow here. Stop it a minute later, or delete it with delete_timesheet once stopped.',
+                $timesheet->getProject()?->getName(),
+                $begin->format('H:i'),
+                $end->format('H:i')
+            ));
+        }
+
+        $restore = $this->snapshot($timesheet);
+        try {
+            $timesheet->setEnd(clone $end);
+            try {
+                $this->service->validateTimesheet($timesheet);
+            } catch (ValidationFailedException $e) {
+                throw new ToolException(\sprintf('Kimai would refuse to stop the timer on %s at %s: %s', $timesheet->getProject()?->getName(), $end->format('H:i'), $this->violations($e)));
+            }
+            $this->roundings->applyRoundings($timesheet);
+
+            return clone ($timesheet->getEnd() ?? $end);
+        } finally {
+            $restore();
+        }
     }
 
     /**
@@ -485,6 +506,27 @@ final class TimesheetWriter
             'activity' => ['id' => $timesheet->getActivity()?->getId(), 'name' => $timesheet->getActivity()?->getName()],
             'description' => $timesheet->getDescription(),
         ];
+    }
+
+    /**
+     * A new entry for $owner, as Kimai prepares one, with what log_time and start_timer both set.
+     *
+     * @param array<string, mixed> $customFields custom field name => value
+     * @throws ToolException
+     */
+    private function compose(User $owner, Project $project, Activity $activity, \DateTime $begin, ?string $description, array $customFields): Timesheet
+    {
+        $timesheet = $this->service->createNewTimesheet($owner);
+        $this->service->prepareNewTimesheet($timesheet);
+        $timesheet->setProject($project);
+        $timesheet->setActivity($activity);
+        $timesheet->setBegin(clone $begin);
+        if ($description !== null && $description !== '') {
+            $timesheet->setDescription($description);
+        }
+        $this->setCustomFields($timesheet, $customFields);
+
+        return $timesheet;
     }
 
     /**

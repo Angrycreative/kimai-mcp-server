@@ -22,6 +22,8 @@ use App\Repository\ActivityRepository;
 use App\Repository\ProjectRepository;
 use App\Repository\TimesheetRepository;
 use App\Repository\UserRepository;
+use App\Timesheet\Rounding\DefaultRounding;
+use App\Timesheet\RoundingService;
 use App\Timesheet\TimesheetService;
 use App\Timesheet\TrackingMode\TrackingModeInterface;
 use App\Timesheet\TrackingModeService;
@@ -83,8 +85,10 @@ class TimerToolsTest extends TestCase
 
     /**
      * @param array<string, list<string>> $permissions
+     * @param array<string, mixed> $rules Kimai's timesheet rules, over the defaults here
+     * @param int $roundEnd minutes Kimai rounds an end up to, every day
      */
-    private function writer(array $permissions = self::ALL): TimesheetWriter
+    private function writer(array $permissions = self::ALL, array $rules = [], int $roundEnd = 0, int $limit = 1): TimesheetWriter
     {
         $auth = Kimai::auth($this->user, $permissions);
         /** @var TimesheetRepository $timesheets */
@@ -96,11 +100,21 @@ class TimerToolsTest extends TestCase
 
         $loader = $this->createMock(ConfigLoaderInterface::class);
         $loader->method('getConfigurations')->willReturn([]);
-        $configuration = new SystemConfiguration($loader, ['timesheet' => [
-            'mode' => 'default',
-            'active_entries' => ['hard_limit' => 1],
-            'rules' => ['allow_overlapping_records' => false],
-        ]]);
+        $settings = [
+            'timesheet.mode' => 'default',
+            'timesheet.active_entries.hard_limit' => $limit,
+            'timesheet.rules.allow_overlapping_records' => false,
+            'timesheet.rules.allow_zero_duration' => true,
+            'timesheet.rounding.default.mode' => 'default',
+            'timesheet.rounding.default.days' => 'monday,tuesday,wednesday,thursday,friday,saturday,sunday',
+            'timesheet.rounding.default.begin' => 0,
+            'timesheet.rounding.default.end' => $roundEnd,
+            'timesheet.rounding.default.duration' => 0,
+        ];
+        foreach ($rules as $rule => $value) {
+            $settings['timesheet.rules.' . $rule] = $value;
+        }
+        $configuration = new SystemConfiguration($loader, $settings);
         $mode = $this->createMock(TrackingModeInterface::class);
         $mode->method('getId')->willReturn('default');
         $validator = $this->createMock(ValidatorInterface::class);
@@ -123,6 +137,7 @@ class TimerToolsTest extends TestCase
             $configuration,
             $timesheets,
             $this->createMock(EventDispatcherInterface::class),
+            new RoundingService($configuration, [new DefaultRounding()], ['default' => ['days' => '', 'begin' => 0, 'end' => 0, 'duration' => 0, 'mode' => 'default']]),
         );
     }
 
@@ -215,6 +230,54 @@ class TimerToolsTest extends TestCase
         (new StartTimerTool($this->writer()))->call(['project_id' => $this->project->getId(), 'activity_id' => $this->activity->getId(), 'start' => '00:00'], $this->user);
     }
 
+    public function testATimerKeptRunningIsComparedWithAnEarlierStartToo(): void
+    {
+        $writer = $this->writer(limit: 2);
+        $this->entry($writer->minute($this->user));
+
+        $this->expectException(ToolException::class);
+        $this->expectExceptionMessage('would overlap');
+        (new StartTimerTool($writer))->call(['project_id' => $this->project->getId(), 'activity_id' => $this->activity->getId(), 'start' => '00:00'], $this->user);
+    }
+
+    public function testAFinishedEntryLaterTodayIsAWarningNotARefusal(): void
+    {
+        $writer = $this->writer();
+        $later = $writer->minute($this->user)->modify('+2 minutes');
+        if ($later->format('Y-m-d') !== $writer->minute($this->user)->format('Y-m-d')) {
+            $this->markTestSkipped('No later today left to put an entry in.');
+        }
+        $this->entry($later, (clone $later)->modify('+1 minute'));
+
+        $preview = (new StartTimerTool($writer))->call(['project_id' => $this->project->getId(), 'activity_id' => $this->activity->getId()], $this->user);
+
+        $this->assertStringContainsString('Stop this timer by ' . $later->format('H:i'), $preview['would']['warning']);
+    }
+
+    public function testAStopKimaisRoundingWouldEndAfterTheNewStartIsRefusedInThePreview(): void
+    {
+        $writer = $this->writer(roundEnd: 15);
+        $start = $writer->minute($this->user);
+        if ((int) $start->format('i') % 15 === 0) {
+            $start->modify('-1 minute');
+        }
+        $this->entry($this->today('00:00'));
+
+        $this->expectException(ToolException::class);
+        $this->expectExceptionMessage('Kimai rounds the end of your running timer');
+        (new StartTimerTool($writer))->call(['project_id' => $this->project->getId(), 'activity_id' => $this->activity->getId(), 'start' => $start->format('H:i')], $this->user);
+    }
+
+    public function testStoppingInTheMinuteItStartedIsRefusedWhereKimaiAllowsNoEmptyEntry(): void
+    {
+        $writer = $this->writer(rules: ['allow_zero_duration' => false]);
+        $this->entry($writer->minute($this->user));
+
+        $this->expectException(ToolException::class);
+        $this->expectExceptionMessage('an entry of no time');
+        (new StopTimerTool($writer))->call([], $this->user);
+    }
+
     public function testATimerCannotStartInTheFuture(): void
     {
         $this->expectException(ToolException::class);
@@ -244,6 +307,18 @@ class TimerToolsTest extends TestCase
         $this->confirm(new StopTimerTool($writer), ['end' => $end]);
 
         $this->assertSame($end, $entry->getEnd()?->format('H:i'));
+    }
+
+    public function testAnEndEarlierInTheDayThanTheStartIsTheNextDay(): void
+    {
+        $writer = $this->writer();
+        $now = $writer->minute($this->user);
+        // started yesterday a minute later in the day than now, so "now" by the clock is past midnight for it
+        $entry = $this->entry((clone $now)->modify('-1 day +1 minute'));
+
+        $this->confirm(new StopTimerTool($writer), ['end' => $now->format('H:i')]);
+
+        $this->assertEquals($now, $entry->getEnd());
     }
 
     public function testStoppingAsksWhichWhenSeveralAreRunning(): void

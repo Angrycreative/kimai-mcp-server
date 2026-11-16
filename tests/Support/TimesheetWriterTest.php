@@ -20,6 +20,7 @@ use App\Repository\ActivityRepository;
 use App\Repository\ProjectRepository;
 use App\Repository\TimesheetRepository;
 use App\Repository\UserRepository;
+use App\Timesheet\RoundingService;
 use App\Timesheet\TimesheetService;
 use KimaiPlugin\McpServerBundle\Support\TimesheetWriter;
 use KimaiPlugin\McpServerBundle\Tests\Kimai;
@@ -48,6 +49,7 @@ class TimesheetWriterTest extends TestCase
             (new \ReflectionClass(SystemConfiguration::class))->newInstanceWithoutConstructor(),
             $this->createMock(TimesheetRepository::class),
             $this->createMock(EventDispatcherInterface::class),
+            (new \ReflectionClass(RoundingService::class))->newInstanceWithoutConstructor(),
         );
     }
 

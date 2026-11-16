@@ -50,7 +50,7 @@ final class StartTimerTool extends AbstractWriteTool
             'activity_id' => Schema::id('The activity (ID from find_activities for that project)'),
             'start' => ['type' => 'string', 'pattern' => '^\d{1,2}:\d{2}$', 'description' => 'When it started, HH:MM today, in your timezone. Default: now'],
             'description' => ['type' => 'string', 'description' => 'What you are working on'],
-            'custom_fields' => ['type' => 'object', 'additionalProperties' => ['type' => ['string', 'number', 'boolean']], 'description' => 'Custom field values by field name, e.g. {"youtrack_issue_key": "AN-176"}'],
+            'custom_fields' => Schema::customFields(),
         ], ['project_id', 'activity_id']);
     }
 
@@ -64,42 +64,61 @@ final class StartTimerTool extends AbstractWriteTool
         $project = $this->writer->project((int) Args::int($arguments, 'project_id'));
         $activity = $this->writer->activity((int) Args::int($arguments, 'activity_id'), $project);
         $description = Args::string($arguments, 'description');
-        /** @var array<string, mixed> $fields */
-        $fields = \is_array($arguments['custom_fields'] ?? null) ? $arguments['custom_fields'] : [];
+        $fields = Args::customFields($arguments);
 
         $timezone = new \DateTimeZone($user->getTimezone());
+        $now = new \DateTime('now', $timezone);
         $start = Args::string($arguments, 'start');
         $begin = null;
         if ($start !== null) {
-            $begin = $this->writer->at($user, (new \DateTime('now', $timezone))->format('Y-m-d'), $start);
-            if ($begin > new \DateTime('now', $timezone)) {
+            $begin = $this->writer->at($user, $now->format('Y-m-d'), $start);
+            if ($begin > $now) {
                 throw new ToolException(\sprintf('%s is later than now. A timer starts now or earlier today; to plan ahead, use log_time.', $start));
             }
         }
 
-        $stops = $this->stops($user);
+        $running = $this->writer->running($user);
+        $stops = $this->stops($running);
         if ($begin !== null) {
             // Kimai's overlap check passes a running entry and only bites when it is stopped, which would leave a
-            // timer nobody can stop. So whatever it would overlap by then is refused now.
-            foreach ($stops as $entry) {
+            // timer nobody can stop. So whatever it would overlap by then is refused now: the timers it stops, and
+            // those it leaves running when Kimai allows more than one.
+            foreach ($running as $entry) {
                 $started = $entry->getBegin();
                 if ($started !== null && $started > $begin) {
                     throw new ToolException(\sprintf('Your running timer on %s started at %s, after %s, so the two would overlap. Stop it at an earlier time with stop_timer first, or start from %s or later.', $entry->getProject()?->getName(), $started->format('H:i'), $start, $started->format('H:i')));
                 }
             }
-            $later = $this->writer->entriesAfter($user, $begin);
-            if ($later !== []) {
-                throw new ToolException(\sprintf('You have an entry from %s to %s today (%s), so a timer from %s would overlap it. Start it after %s, or log the time with log_time.', $later[0]->getBegin()?->format('H:i'), $later[0]->getEnd()?->format('H:i'), $later[0]->getProject()?->getName(), $start, $later[\count($later) - 1]->getEnd()?->format('H:i')));
+            $earlier = $this->writer->entriesBetween($user, $begin, $now);
+            if ($earlier !== []) {
+                throw new ToolException(\sprintf('You have an entry from %s to %s today (%s), so a timer from %s would overlap it. Start it after %s, or log the time with log_time.', $earlier[0]->getBegin()?->format('H:i'), $earlier[0]->getEnd()?->format('H:i'), $earlier[0]->getProject()?->getName(), $start, $earlier[\count($earlier) - 1]->getEnd()?->format('H:i')));
             }
         }
 
+        // stopping each is checked as Kimai would, "now" by the clock of the preview: a timer in a locked period, one
+        // running too long, or one Kimai's rounding would end after the new one starts, is refused here, not on confirm
+        $at = $begin ?? $this->writer->minute($user);
+        foreach ($stops as $entry) {
+            $this->checkStop($entry, $at);
+        }
+
         // checked as Kimai would on start, from the time it would really start
-        $timer = $this->writer->timer($user, $project, $activity, $begin ?? $this->writer->minute($user), $description, $fields);
+        $timer = $this->writer->timer($user, $project, $activity, $at, $description, $fields);
 
         $summary = ['start_timer' => $this->writer->describe($timer)];
         if ($start === null) {
             $summary['start_timer']['from'] = 'now, when you confirm';
             unset($summary['start_timer']['date']);
+        }
+        $later = $this->writer->entriesBetween($user, $now, (clone $now)->modify('tomorrow'));
+        if ($later !== []) {
+            $summary['warning'] = \sprintf(
+                'You have an entry from %s to %s today (%s). Stop this timer by %s: Kimai refuses to stop a timer once it overlaps another entry.',
+                $later[0]->getBegin()?->format('H:i'),
+                $later[0]->getEnd()?->format('H:i'),
+                $later[0]->getProject()?->getName(),
+                $later[0]->getBegin()?->format('H:i')
+            );
         }
         if ($stops !== []) {
             $summary['stops'] = array_map(function (Timesheet $entry): array {
@@ -121,8 +140,14 @@ final class StartTimerTool extends AbstractWriteTool
             // rounded up, overlapping it (see TimesheetWriter::minute()).
             $at = $begin ?? $this->writer->minute($user);
             $stopped = [];
-            foreach ($this->stops($user) as $entry) {
+            foreach ($this->stops($this->writer->running($user)) as $entry) {
+                $this->checkStop($entry, $at);
                 $this->writer->stopAt($entry, $at);
+                // a plugin's rounding, applied as it saves, is only seen afterwards; refusing rolls the stop back
+                $end = $entry->getEnd();
+                if ($end !== null && $end > $at) {
+                    throw $this->roundedPast($entry, $end, $at);
+                }
                 $stopped[] = (int) $entry->getId();
             }
             $timer = $this->writer->timer($user, $project, $activity, $at, $description, $fields);
@@ -140,12 +165,36 @@ final class StartTimerTool extends AbstractWriteTool
     /**
      * The running timers starting one more would take past Kimai's limit, oldest first.
      *
+     * @param list<Timesheet> $running newest first
      * @return list<Timesheet>
      */
-    private function stops(User $user): array
+    private function stops(array $running): array
     {
-        $running = $this->writer->running($user);
-
         return \array_slice(array_reverse($running), 0, max(0, \count($running) + 1 - $this->writer->runningLimit()));
+    }
+
+    /**
+     * Refuses stopping $entry at $at where Kimai would: its own rules, and an end its rounding moves past $at, which
+     * the new timer would overlap and so never be stopped.
+     *
+     * @throws ToolException
+     */
+    private function checkStop(Timesheet $entry, \DateTime $at): void
+    {
+        $end = $this->writer->trialStop($entry, $at);
+        if ($end > $at) {
+            throw $this->roundedPast($entry, $end, $at);
+        }
+    }
+
+    private function roundedPast(Timesheet $entry, \DateTimeInterface $end, \DateTime $at): ToolException
+    {
+        return new ToolException(\sprintf(
+            'Kimai rounds the end of your running timer on %s up to %s, so it would overlap a new timer starting at %s, which could then never be stopped. Stop it with stop_timer first, then start the new one from %s, or log the time with log_time.',
+            $entry->getProject()?->getName(),
+            $end->format('H:i'),
+            $at->format('H:i'),
+            $end->format('H:i')
+        ));
     }
 }

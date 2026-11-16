@@ -22,6 +22,7 @@ use App\Repository\ActivityRepository;
 use App\Repository\ProjectRepository;
 use App\Repository\TimesheetRepository;
 use App\Repository\UserRepository;
+use App\Timesheet\RoundingService;
 use App\Timesheet\TimesheetService;
 use App\Timesheet\TrackingMode\TrackingModeInterface;
 use App\Timesheet\TrackingModeService;
@@ -123,6 +124,7 @@ class LogAbsenceToolTest extends TestCase
             $configuration,
             $timesheets,
             $this->createMock(EventDispatcherInterface::class),
+            (new \ReflectionClass(RoundingService::class))->newInstanceWithoutConstructor(),
         );
 
         // no work contract: the organisation's default eight hour weekday

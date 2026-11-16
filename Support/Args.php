@@ -34,6 +34,20 @@ final class Args
     }
 
     /**
+     * The "custom_fields" object, by field name; empty when left out.
+     *
+     * @param array<string, mixed> $args
+     * @return array<string, mixed>
+     */
+    public static function customFields(array $args): array
+    {
+        /** @var array<string, mixed> $fields */
+        $fields = \is_array($args['custom_fields'] ?? null) ? $args['custom_fields'] : [];
+
+        return $fields;
+    }
+
+    /**
      * @param array<string, mixed> $args
      */
     public static function int(array $args, string $key): ?int

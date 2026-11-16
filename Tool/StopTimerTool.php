@@ -36,15 +36,15 @@ final class StopTimerTool extends AbstractWriteTool
 
     public function getDescription(): string
     {
-        return 'Stops your running timer, now or at an earlier time on the day it started ("I forgot, it ended at '
-            . '17:00"), optionally with a new description. With more than one running, give its id (running_timers).';
+        return 'Stops your running timer, now or at an earlier time ("I forgot, it ended at 17:00"), optionally with '
+            . 'a new description. With more than one running, give its id (running_timers).';
     }
 
     protected function getArgumentSchema(): array
     {
         return Schema::object([
             'id' => Schema::id('The running entry, from running_timers. Default: your only running timer'),
-            'end' => ['type' => 'string', 'pattern' => '^\d{1,2}:\d{2}$', 'description' => 'When it ended, HH:MM on the day it started, in your timezone. Default: now'],
+            'end' => ['type' => 'string', 'pattern' => '^\d{1,2}:\d{2}$', 'description' => 'When it ended, HH:MM in your timezone: the first such time after it started, so 01:00 for a timer started at 22:00 is the next day. Default: now'],
             'description' => ['type' => 'string', 'description' => 'A new description for the entry'],
         ]);
     }
@@ -71,34 +71,37 @@ final class StopTimerTool extends AbstractWriteTool
         $endAt = null;
         if ($end !== null) {
             $begin = $entry->getBegin() ?? throw new ToolException('This entry has no start.');
-            $endAt = $this->writer->at($user, (clone $begin)->setTimezone(new \DateTimeZone($user->getTimezone()))->format('Y-m-d'), $end);
-            if ($endAt <= $begin) {
-                throw new ToolException(\sprintf('The timer started at %s, so it cannot end at %s.', $begin->format('H:i'), $end));
+            $timezone = new \DateTimeZone($user->getTimezone());
+            // the first $end after it started: a timer started at 22:00 and stopped at 01:00 ended the next day
+            $endAt = $this->writer->at($user, (clone $begin)->setTimezone($timezone)->format('Y-m-d'), $end);
+            while ($endAt <= $begin) {
+                $endAt->modify('+1 day');
             }
-            if ($endAt > new \DateTime('now', new \DateTimeZone($user->getTimezone()))) {
-                throw new ToolException(\sprintf('%s is later than now. Leave "end" out to stop it now.', $end));
+            if ($endAt > new \DateTime('now', $timezone)) {
+                throw new ToolException(\sprintf('The timer started at %s on %s, and %s after that has not come yet. Leave "end" out to stop it now.', $begin->format('H:i'), $begin->format('Y-m-d'), $end));
             }
         }
 
         $summary = ['stop_timer' => $this->writer->describe($entry)];
         unset($summary['stop_timer']['running']);
-        $summary['stop_timer']['to'] = $endAt !== null ? $endAt->format('H:i') : 'now, when you confirm';
+        $summary['stop_timer']['to'] = 'now, when you confirm';
+        if ($endAt !== null) {
+            $summary['stop_timer']['to'] = $endAt->format($endAt->format('Y-m-d') === ($summary['stop_timer']['date'] ?? null) ? 'H:i' : 'Y-m-d H:i');
+        }
         if ($description !== null && $description !== '') {
             $summary['stop_timer']['description'] = $description;
         }
 
-        // with a given end, Kimai's validation is run on the result now; stopping now is validated as it happens
-        if ($endAt !== null) {
-            $restore = $this->writer->snapshot($entry);
-            try {
-                $entry->setEnd(clone $endAt);
-                if ($description !== null && $description !== '') {
-                    $entry->setDescription($description);
-                }
-                $this->writer->validate($entry);
-            } finally {
-                $restore();
+        // Kimai's rules are run on the result now; stopping now is checked by the clock of the preview, so a timer
+        // running too long, or one with no time yet, is refused here rather than on confirm
+        $restore = $this->writer->snapshot($entry);
+        try {
+            if ($description !== null && $description !== '') {
+                $entry->setDescription($description);
             }
+            $this->writer->trialStop($entry, $endAt ?? $this->writer->minute($user));
+        } finally {
+            $restore();
         }
 
         return new WritePlan($summary, function () use ($entry, $endAt, $description, $user): array {
