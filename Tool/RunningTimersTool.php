@@ -51,8 +51,7 @@ final class RunningTimersTool extends AbstractReadTool
     {
         $now = time();
         $timers = array_map(function (Timesheet $entry) use ($now): array {
-            $row = $this->writer->describe($entry);
-            unset($row['user'], $row['running']);
+            $row = $this->writer->describeTimer($entry);
             $row['hours_so_far'] = Format::hours(max(0, $now - (int) $entry->getBegin()?->getTimestamp()));
 
             return $row;

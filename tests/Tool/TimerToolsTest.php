@@ -87,8 +87,9 @@ class TimerToolsTest extends TestCase
      * @param array<string, list<string>> $permissions
      * @param array<string, mixed> $rules Kimai's timesheet rules, over the defaults here
      * @param int $roundEnd minutes Kimai rounds an end up to, every day
+     * @param int $roundBegin minutes Kimai rounds a start down to, every day
      */
-    private function writer(array $permissions = self::ALL, array $rules = [], int $roundEnd = 0, int $limit = 1): TimesheetWriter
+    private function writer(array $permissions = self::ALL, array $rules = [], int $roundEnd = 0, int $limit = 1, int $roundBegin = 0): TimesheetWriter
     {
         $auth = Kimai::auth($this->user, $permissions);
         /** @var TimesheetRepository $timesheets */
@@ -107,7 +108,7 @@ class TimerToolsTest extends TestCase
             'timesheet.rules.allow_zero_duration' => true,
             'timesheet.rounding.default.mode' => 'default',
             'timesheet.rounding.default.days' => 'monday,tuesday,wednesday,thursday,friday,saturday,sunday',
-            'timesheet.rounding.default.begin' => 0,
+            'timesheet.rounding.default.begin' => $roundBegin,
             'timesheet.rounding.default.end' => $roundEnd,
             'timesheet.rounding.default.duration' => 0,
         ];
@@ -266,6 +267,29 @@ class TimerToolsTest extends TestCase
         $this->expectException(ToolException::class);
         $this->expectExceptionMessage('Kimai rounds the end of your running timer');
         (new StartTimerTool($writer))->call(['project_id' => $this->project->getId(), 'activity_id' => $this->activity->getId(), 'start' => $start->format('H:i')], $this->user);
+    }
+
+    public function testATimerStartsWhereKimaisRoundingPutsItAndTheOldOneEndsThere(): void
+    {
+        $writer = $this->writer(roundBegin: 15);
+        $old = $this->entry($this->today('00:00'));
+
+        $this->confirm(new StartTimerTool($writer), ['project_id' => $this->project->getId(), 'activity_id' => $this->activity->getId()]);
+
+        $new = $writer->running($this->user)[0];
+        $this->assertSame(0, (int) $new->getBegin()?->format('i') % 15, 'the start is rounded down as Kimai\'s start button does');
+        $this->assertEquals($new->getBegin(), $old->getEnd(), 'the old timer ends where the rounded new one starts');
+    }
+
+    public function testAnEndInTheMinuteTheTimerStartedStaysOnThatDay(): void
+    {
+        $writer = $this->writer();
+        $begin = $writer->minute($this->user)->modify('-1 hour +30 seconds');
+        $this->entry($begin);
+
+        $this->expectException(ToolException::class);
+        $this->expectExceptionMessage('an entry of no time');
+        (new StopTimerTool($writer))->call(['end' => $begin->format('H:i')], $this->user);
     }
 
     public function testStoppingInTheMinuteItStartedIsRefusedWhereKimaiAllowsNoEmptyEntry(): void

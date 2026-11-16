@@ -77,27 +77,29 @@ final class StartTimerTool extends AbstractWriteTool
             }
         }
 
+        // when it really starts: Kimai rounds a start down by its rounding rules, and the timers it stops end there
+        $at = $this->writer->roundedStart($begin ?? $this->writer->minute($user));
+
+        // Kimai's overlap check passes a running entry and only bites when it is stopped, which would leave a timer
+        // nobody can stop. So whatever it would overlap by then is refused now: a running timer that started later
+        // (whether this one would stop it or, where Kimai allows more than one, leave it running), and entries
+        // already logged.
         $running = $this->writer->running($user);
         $stops = $this->stops($running);
-        if ($begin !== null) {
-            // Kimai's overlap check passes a running entry and only bites when it is stopped, which would leave a
-            // timer nobody can stop. So whatever it would overlap by then is refused now: the timers it stops, and
-            // those it leaves running when Kimai allows more than one.
-            foreach ($running as $entry) {
-                $started = $entry->getBegin();
-                if ($started !== null && $started > $begin) {
-                    throw new ToolException(\sprintf('Your running timer on %s started at %s, after %s, so the two would overlap. Stop it at an earlier time with stop_timer first, or start from %s or later.', $entry->getProject()?->getName(), $started->format('H:i'), $start, $started->format('H:i')));
-                }
+        foreach ($running as $entry) {
+            $started = $entry->getBegin();
+            if ($started !== null && $started > $at) {
+                throw new ToolException(\sprintf('Your running timer on %s started at %s, after %s, so the two would overlap. Stop it with stop_timer first, or start from %s or later.', $entry->getProject()?->getName(), $this->clock($started), $this->clock($at), $this->clock($started)));
             }
-            $earlier = $this->writer->entriesBetween($user, $begin, $now);
-            if ($earlier !== []) {
-                throw new ToolException(\sprintf('You have an entry from %s to %s today (%s), so a timer from %s would overlap it. Start it after %s, or log the time with log_time.', $earlier[0]->getBegin()?->format('H:i'), $earlier[0]->getEnd()?->format('H:i'), $earlier[0]->getProject()?->getName(), $start, $earlier[\count($earlier) - 1]->getEnd()?->format('H:i')));
-            }
+        }
+        $earlier = $this->writer->entriesBetween($user, $at, $now);
+        if ($earlier !== []) {
+            throw new ToolException(\sprintf('You have an entry from %s to %s today (%s), so a timer from %s would overlap it. Start it after %s, or log the time with log_time.', $earlier[0]->getBegin()?->format('H:i'), $earlier[0]->getEnd()?->format('H:i'), $earlier[0]->getProject()?->getName(), $this->clock($at), $earlier[\count($earlier) - 1]->getEnd()?->format('H:i')));
         }
 
         // stopping each is checked as Kimai would, "now" by the clock of the preview: a timer in a locked period, one
-        // running too long, or one Kimai's rounding would end after the new one starts, is refused here, not on confirm
-        $at = $begin ?? $this->writer->minute($user);
+        // running too long, one that started after this one would, or one Kimai's rounding would end after the new one
+        // starts, is refused here, not on confirm
         foreach ($stops as $entry) {
             $this->checkStop($entry, $at);
         }
@@ -121,16 +123,11 @@ final class StartTimerTool extends AbstractWriteTool
             );
         }
         if ($stops !== []) {
-            $summary['stops'] = array_map(function (Timesheet $entry): array {
-                $row = $this->writer->describe($entry);
-                unset($row['user'], $row['running']);
-
-                return $row;
-            }, $stops);
+            $summary['stops'] = array_map($this->writer->describeTimer(...), $stops);
             $summary['note'] = \sprintf(
                 'Kimai allows %d running timer(s), so starting this one stops the oldest %s.',
                 $this->writer->runningLimit(),
-                $start !== null ? 'at ' . $start : 'at the moment it starts'
+                $start !== null ? 'at ' . $at->format('H:i') : 'at the moment it starts'
             );
         }
 
@@ -138,12 +135,12 @@ final class StartTimerTool extends AbstractWriteTool
             // "now" is the minute of the confirmation. The timers beyond Kimai's limit end exactly where this one
             // starts, stopped first: left to Kimai, they would be stopped after it is saved, at the current second
             // rounded up, overlapping it (see TimesheetWriter::minute()).
-            $at = $begin ?? $this->writer->minute($user);
+            $at = $this->writer->roundedStart($begin ?? $this->writer->minute($user));
             $stopped = [];
             foreach ($this->stops($this->writer->running($user)) as $entry) {
-                $this->checkStop($entry, $at);
+                // validated as it stops; the preview has already run the same checks
                 $this->writer->stopAt($entry, $at);
-                // a plugin's rounding, applied as it saves, is only seen afterwards; refusing rolls the stop back
+                // rounding applied as it saves, a plugin's included, is only seen afterwards; refusing rolls it back
                 $end = $entry->getEnd();
                 if ($end !== null && $end > $at) {
                     throw $this->roundedPast($entry, $end, $at);
@@ -185,6 +182,12 @@ final class StartTimerTool extends AbstractWriteTool
         if ($end > $at) {
             throw $this->roundedPast($entry, $end, $at);
         }
+    }
+
+    /** A time as people say it, with the seconds only where Kimai kept some. */
+    private function clock(\DateTimeInterface $time): string
+    {
+        return $time->format($time->format('s') === '00' ? 'H:i' : 'H:i:s');
     }
 
     private function roundedPast(Timesheet $entry, \DateTimeInterface $end, \DateTime $at): ToolException

@@ -59,7 +59,7 @@ final class StopTimerTool extends AbstractWriteTool
         $entry = $this->target($arguments, $user);
         $end = Args::string($arguments, 'end');
         $description = Args::string($arguments, 'description');
-        $edits = $end !== null || ($description !== null && $description !== '');
+        $edits = $end !== null || $description !== null;
 
         if (!$this->writer->mayStop($entry)) {
             throw new ToolException('Kimai does not let you stop this timer: your role may not stop its own timers.');
@@ -74,7 +74,8 @@ final class StopTimerTool extends AbstractWriteTool
             $timezone = new \DateTimeZone($user->getTimezone());
             // the first $end after it started: a timer started at 22:00 and stopped at 01:00 ended the next day
             $endAt = $this->writer->at($user, (clone $begin)->setTimezone($timezone)->format('Y-m-d'), $end);
-            while ($endAt <= $begin) {
+            // an end in the minute it started stays on that day, and is refused below as an empty entry
+            while ($endAt <= $begin && intdiv($endAt->getTimestamp(), 60) !== intdiv($begin->getTimestamp(), 60)) {
                 $endAt->modify('+1 day');
             }
             if ($endAt > new \DateTime('now', $timezone)) {
@@ -82,13 +83,12 @@ final class StopTimerTool extends AbstractWriteTool
             }
         }
 
-        $summary = ['stop_timer' => $this->writer->describe($entry)];
-        unset($summary['stop_timer']['running']);
+        $summary = ['stop_timer' => $this->writer->describeTimer($entry)];
         $summary['stop_timer']['to'] = 'now, when you confirm';
         if ($endAt !== null) {
             $summary['stop_timer']['to'] = $endAt->format($endAt->format('Y-m-d') === ($summary['stop_timer']['date'] ?? null) ? 'H:i' : 'Y-m-d H:i');
         }
-        if ($description !== null && $description !== '') {
+        if ($description !== null) {
             $summary['stop_timer']['description'] = $description;
         }
 
@@ -96,7 +96,7 @@ final class StopTimerTool extends AbstractWriteTool
         // running too long, or one with no time yet, is refused here rather than on confirm
         $restore = $this->writer->snapshot($entry);
         try {
-            if ($description !== null && $description !== '') {
+            if ($description !== null) {
                 $entry->setDescription($description);
             }
             $this->writer->trialStop($entry, $endAt ?? $this->writer->minute($user));
@@ -105,7 +105,7 @@ final class StopTimerTool extends AbstractWriteTool
         }
 
         return new WritePlan($summary, function () use ($entry, $endAt, $description, $user): array {
-            if ($description !== null && $description !== '') {
+            if ($description !== null) {
                 $entry->setDescription($description);
             }
             // "now" is the minute of the confirmation (see TimesheetWriter::minute())
