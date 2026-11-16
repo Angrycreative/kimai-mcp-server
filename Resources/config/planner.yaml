@@ -7,3 +7,5 @@ services:
 
     KimaiPlugin\McpServerBundle\Planner\:
         resource: '../../Planner/*'
+
+    KimaiPlugin\McpServerBundle\Capacity\PublicHolidaysInterface: '@KimaiPlugin\McpServerBundle\Planner\PlannerPublicHolidays'

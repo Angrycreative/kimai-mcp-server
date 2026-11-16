@@ -16,18 +16,22 @@ use App\Entity\Activity;
 use App\Entity\Project;
 use App\Entity\Timesheet;
 use App\Entity\User;
+use App\Event\TimesheetMetaDefinitionEvent;
 use App\Repository\ActivityRepository;
 use App\Repository\ProjectRepository;
+use App\Repository\TimesheetRepository;
 use App\Repository\UserRepository;
 use App\Timesheet\TimesheetService;
 use App\Validator\ValidationFailedException;
 use KimaiPlugin\McpServerBundle\Tool\ToolException;
+use Psr\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
 
 /**
- * Creates timesheet entries the way Kimai's own API does: through TimesheetService, so its voters, validation
- * (lockdown, overlaps, required custom fields, project and activity rules), rates and events all apply. Entries are
- * built and checked first and saved only on confirmation, so a preview that passes is an entry that will save.
+ * Creates, changes and deletes timesheet entries the way Kimai's own API does: through TimesheetService, so its
+ * voters, validation (lockdown, overlaps, required custom fields, project and activity rules), rates and events all
+ * apply. Entries are built and checked first and saved only on confirmation, so a preview that passes is an entry
+ * that will save.
  */
 final class TimesheetWriter
 {
@@ -40,7 +44,143 @@ final class TimesheetWriter
         private readonly ProjectRepository $projects,
         private readonly ActivityRepository $activities,
         private readonly SystemConfiguration $configuration,
+        private readonly TimesheetRepository $timesheets,
+        private readonly EventDispatcherInterface $dispatcher,
     ) {
+    }
+
+    /**
+     * One of the caller's own entries that they may still change ("edit") or delete ("delete"). Other people's
+     * entries are out of reach whatever the role allows, and so is invoiced (exported) time: correcting it would
+     * change an invoice that has gone out.
+     *
+     * @param 'edit'|'delete' $attribute
+     * @throws ToolException
+     */
+    public function ownEntry(int $id, User $caller, string $attribute): Timesheet
+    {
+        $entry = $this->timesheets->find($id);
+        // someone else's entry reads as missing, so its existence is not given away
+        if (!$entry instanceof Timesheet || $entry->getUser()?->getId() !== $caller->getId()) {
+            throw new ToolException('You have no entry with that ID. Use search_timesheets to find the ID of the entry.');
+        }
+        if ($entry->isExported()) {
+            throw new ToolException('This entry has been invoiced (exported), so it cannot be changed here: that would change an invoice. Ask whoever handles invoicing.');
+        }
+        if ($attribute === 'edit' && $entry->isRunning()) {
+            throw new ToolException('This entry is still running. Stop it in Kimai first, then correct it.');
+        }
+        if (!$this->auth->isGranted($attribute, $entry)) {
+            throw new ToolException(\sprintf(
+                'Kimai does not allow %s this entry: the period of %s may be locked, or your role may not %s its own time.',
+                $attribute === 'edit' ? 'changing' : 'deleting',
+                $entry->getBegin()?->format('Y-m-d'),
+                $attribute === 'edit' ? 'edit' : 'delete'
+            ));
+        }
+
+        return $entry;
+    }
+
+    /**
+     * Remembers what an entry holds now, and returns what puts it back: a preview changes the entry itself, to have
+     * Kimai validate exactly the result, and must leave it as it was. Kimai's timesheets are tracked explicitly, so
+     * nothing reaches the database unless saved, but the entry must not look changed to the rest of the request.
+     *
+     * @return \Closure(): void
+     */
+    public function snapshot(Timesheet $entry): \Closure
+    {
+        $project = $entry->getProject();
+        $activity = $entry->getActivity();
+        $begin = $entry->getBegin() !== null ? clone $entry->getBegin() : null;
+        $end = $entry->getEnd() !== null ? clone $entry->getEnd() : null;
+        $duration = $entry->getDuration(false);
+        $timezone = $entry->getTimezone();
+        $description = $entry->getDescription();
+        $billable = $entry->isBillable();
+        $billableMode = $entry->getBillableMode();
+        $meta = [];
+        foreach ($entry->getMetaFields() as $field) {
+            $meta[spl_object_id($field)] = $field->getValue();
+        }
+
+        return static function () use ($entry, $project, $activity, $begin, $end, $duration, $timezone, $description, $billable, $billableMode, $meta): void {
+            if ($project !== null) {
+                $entry->setProject($project);
+            }
+            if ($activity !== null) {
+                $entry->setActivity($activity);
+            }
+            if ($begin !== null) {
+                $entry->setBegin(clone $begin);
+            }
+            $entry->setEnd($end !== null ? clone $end : null);
+            $entry->setDuration($duration);
+            if ($timezone !== null) {
+                $entry->setTimezone($timezone);
+            }
+            $entry->setDescription($description);
+            $entry->setBillable($billable);
+            $entry->setBillableMode($billableMode);
+            $added = [];
+            foreach ($entry->getMetaFields() as $field) {
+                if (\array_key_exists(spl_object_id($field), $meta)) {
+                    $field->setValue($meta[spl_object_id($field)]);
+                } else {
+                    $added[] = $field;
+                }
+            }
+            // added for this change only (with its default, if it has one): gone again, so the confirmed change adds
+            // it afresh with the same default the preview was validated with
+            foreach ($added as $field) {
+                $entry->getMetaFields()->removeElement($field);
+            }
+        };
+    }
+
+    /**
+     * Sets custom field values by name, refusing names the entry does not have.
+     *
+     * @param array<string, mixed> $values custom field name => value
+     * @throws ToolException
+     */
+    public function setCustomFields(Timesheet $entry, array $values): void
+    {
+        if ($values === []) {
+            return;
+        }
+        if ($entry->getId() !== null) {
+            // a saved entry only carries the fields it has values for; this adds the others, as the API does
+            $this->dispatcher->dispatch(new TimesheetMetaDefinitionEvent($entry));
+        }
+        foreach ($values as $name => $value) {
+            $field = $entry->getMetaField($name);
+            if ($field === null || !$field->isVisible()) {
+                throw new ToolException(\sprintf('Entries have no custom field "%s".', $name));
+            }
+            $field->setValue(\is_scalar($value) ? (string) $value : null);
+        }
+    }
+
+    /**
+     * Checks a changed entry as Kimai would on save. Whether the caller may change it at all was decided by
+     * ownEntry(), on the entry as it was; the validation covers where it is going, a locked week included.
+     *
+     * @throws ToolException
+     */
+    public function validate(Timesheet $entry): void
+    {
+        try {
+            $this->service->validateTimesheet($entry);
+        } catch (ValidationFailedException $e) {
+            throw new ToolException(\sprintf('Kimai would refuse the change on %s: %s', $entry->getBegin()?->format('Y-m-d'), $this->violations($e)));
+        }
+    }
+
+    public function delete(Timesheet $entry): void
+    {
+        $this->service->deleteTimesheet($entry);
     }
 
     /**
@@ -164,13 +304,7 @@ final class TimesheetWriter
             $timesheet->setBillable($billable);
         }
 
-        foreach ($customFields as $name => $value) {
-            $field = $timesheet->getMetaField($name);
-            if ($field === null || !$field->isVisible()) {
-                throw new ToolException(\sprintf('Entries have no custom field "%s".', $name));
-            }
-            $field->setValue(\is_scalar($value) ? (string) $value : null);
-        }
+        $this->setCustomFields($timesheet, $customFields);
 
         $this->check($timesheet);
 

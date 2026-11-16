@@ -18,6 +18,7 @@ use App\Entity\Team;
 use App\Entity\User;
 use App\Repository\ActivityRepository;
 use App\Repository\ProjectRepository;
+use App\Repository\TimesheetRepository;
 use App\Repository\UserRepository;
 use App\Timesheet\TimesheetService;
 use KimaiPlugin\McpServerBundle\Support\TimesheetWriter;
@@ -25,6 +26,7 @@ use KimaiPlugin\McpServerBundle\Tests\Kimai;
 use KimaiPlugin\McpServerBundle\Tests\TestUser;
 use KimaiPlugin\McpServerBundle\Tool\ToolException;
 use PHPUnit\Framework\TestCase;
+use Psr\EventDispatcher\EventDispatcherInterface;
 
 /**
  * Which projects an ordinary employee may log to, decided by Kimai's real voters with the permissions a plain
@@ -44,6 +46,8 @@ class TimesheetWriterTest extends TestCase
             $projects,
             $this->createMock(ActivityRepository::class),
             (new \ReflectionClass(SystemConfiguration::class))->newInstanceWithoutConstructor(),
+            $this->createMock(TimesheetRepository::class),
+            $this->createMock(EventDispatcherInterface::class),
         );
     }
 
