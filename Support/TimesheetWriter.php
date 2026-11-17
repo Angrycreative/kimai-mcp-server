@@ -363,6 +363,9 @@ final class TimesheetWriter
     public function timer(User $owner, Project $project, Activity $activity, \DateTime $begin, ?string $description = null, array $customFields = []): Timesheet
     {
         $timesheet = $this->compose($owner, $project, $activity, $begin, $description, $customFields);
+        // as Kimai's start does (DefaultMode::create()): compose() sets the begin after Kimai prepared the entry, and
+        // left unrounded it would only be rounded when the timer stops, after the overlap check has passed
+        $this->roundings->roundBegin($timesheet);
 
         if (!$this->auth->isGranted('start', $timesheet)) {
             throw new ToolException(\sprintf(
@@ -377,6 +380,33 @@ final class TimesheetWriter
         }
 
         return $timesheet;
+    }
+
+    /**
+     * When a timer asked to start at $begin really starts: Kimai rounds a start by its rounding rules (down to the
+     * whole minute by default, to the quarter hour where a rule says so).
+     */
+    public function roundedStart(\DateTime $begin): \DateTime
+    {
+        $probe = new Timesheet();
+        $probe->setBegin(clone $begin);
+        $this->roundings->roundBegin($probe);
+
+        return clone ($probe->getBegin() ?? $begin);
+    }
+
+    /**
+     * A running entry of the caller's own, as the timer tools show it: without the person, whom it is about anyway,
+     * and without the running flag, which the tool's name already says.
+     *
+     * @return array<string, mixed>
+     */
+    public function describeTimer(Timesheet $timesheet): array
+    {
+        $row = $this->describe($timesheet);
+        unset($row['user'], $row['running']);
+
+        return $row;
     }
 
     /** Whether Kimai's voter lets the caller stop this running entry. */
