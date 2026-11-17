@@ -157,4 +157,22 @@ class ToolHandlerAdapterTest extends TestCase
         $this->assertFalse($db->isTransactionActive());
         $this->assertSame(1, (int) $db->fetchOne('SELECT COUNT(*) FROM saved'));
     }
+
+    public function testAPreviewLeavesNothingBehindEvenWhenWorkingItOutWrote(): void
+    {
+        $db = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]);
+        $db->executeStatement('CREATE TABLE saved (id INTEGER)');
+        $tool = $this->tool(false, static function () use ($db): array {
+            // as Kimai's tag field does when its form is submitted
+            $db->insert('saved', ['id' => 1]);
+
+            return ['preview' => true, 'would' => []];
+        });
+
+        $result = (new ToolHandlerAdapter($tool, TestUser::make(3), $this->callLog(), null, $db))->execute([], $this->gateway());
+
+        $this->assertFalse($result->isError);
+        $this->assertFalse($db->isTransactionActive());
+        $this->assertSame(0, (int) $db->fetchOne('SELECT COUNT(*) FROM saved'));
+    }
 }

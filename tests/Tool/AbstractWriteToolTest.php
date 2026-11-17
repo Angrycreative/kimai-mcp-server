@@ -143,4 +143,51 @@ class AbstractWriteToolTest extends TestCase
         $this->expectException(ToolException::class);
         $this->tool($applied)->call(['name' => 'bad', 'user_confirmed' => true], new User());
     }
+
+    public function testAPreviewLetsGoOfWhatWorkingItOutChangedAndAConfirmationDoesNot(): void
+    {
+        $discarded = 0;
+        $tool = new class($discarded) extends AbstractWriteTool {
+            public function __construct(private int &$discarded)
+            {
+            }
+
+            public function getName(): string
+            {
+                return 'test_discard';
+            }
+
+            public function getDescription(): string
+            {
+                return 'A write tool for the test.';
+            }
+
+            public function getRequiredPermissions(): array
+            {
+                return [];
+            }
+
+            protected function getArgumentSchema(): array
+            {
+                return Schema::object([]);
+            }
+
+            protected function plan(array $arguments, User $user): WritePlan
+            {
+                return new WritePlan(['change' => 1], static fn (): array => [], function (): void {
+                    ++$this->discarded;
+                });
+            }
+        };
+        $user = new User();
+
+        $preview = $tool->call([], $user);
+        $this->assertSame(1, $discarded);
+
+        $tool->call(['user_confirmed' => true, 'preview_token' => 'stale'], $user);
+        $this->assertSame(2, $discarded);
+
+        $tool->call(['user_confirmed' => true, 'preview_token' => $preview['preview_token']], $user);
+        $this->assertSame(2, $discarded);
+    }
 }

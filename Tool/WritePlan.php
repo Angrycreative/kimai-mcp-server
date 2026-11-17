@@ -20,11 +20,22 @@ final class WritePlan
      * @param array<string, mixed> $summary exactly what would happen, for the preview
      * @param \Closure(): array<string, mixed> $apply makes the change; its result lists what changed under
      *                                                ToolHandlerAdapter::CHANGED
+     * @param (\Closure(): void)|null $discard undoes what working out the change did to records in memory, when it
+     *                                         is only previewed, so nothing saved later in the same request takes it
+     *                                         along
      */
     public function __construct(
         public readonly array $summary,
         private readonly \Closure $apply,
+        private readonly ?\Closure $discard = null,
     ) {
+    }
+
+    public function discard(): void
+    {
+        if ($this->discard !== null) {
+            ($this->discard)();
+        }
     }
 
     /**
