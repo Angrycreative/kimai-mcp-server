@@ -17,7 +17,10 @@ use App\Entity\Project;
 use App\Entity\User;
 use App\Form\CustomerEditForm;
 use App\Form\ProjectEditForm;
+use Doctrine\ORM\EntityManagerInterface;
 use KimaiPlugin\McpServerBundle\Tool\ToolException;
+use Symfony\Component\Form\Extension\Core\Type\DateTimeType;
+use Symfony\Component\Form\Extension\Core\Type\DateType;
 use Symfony\Component\Form\FormError;
 use Symfony\Component\Form\FormFactoryInterface;
 use Symfony\Component\Form\FormInterface;
@@ -48,7 +51,27 @@ final class EntityForms
     public function __construct(
         private readonly FormFactoryInterface $forms,
         private readonly AuthorizationCheckerInterface $auth,
+        private readonly EntityManagerInterface $entities,
     ) {
+    }
+
+    /**
+     * Lets go of a customer or project a form was submitted to without saving it (a preview, or a change Kimai
+     * refused), with its custom fields: the next read loads it afresh, and nothing saved later in the same request
+     * takes the unsaved values along.
+     */
+    public function forget(object $entity): void
+    {
+        if ($entity instanceof EntityWithMetaFields) {
+            foreach ($entity->getMetaFields() as $meta) {
+                if ($this->entities->contains($meta)) {
+                    $this->entities->detach($meta);
+                }
+            }
+        }
+        if ($this->entities->contains($entity)) {
+            $this->entities->detach($entity);
+        }
     }
 
     public function customerForm(Customer $customer): FormInterface
@@ -119,7 +142,7 @@ final class EntityForms
                 if ($meta->get($name)->get('value')->isDisabled()) {
                     throw new ToolException(\sprintf('Kimai does not let you change the custom field "%s".', $name));
                 }
-                $values[$name] = ['value' => $this->formValue($value, \is_bool($value) ? self::BOOL : self::TEXT)];
+                $values[$name] = ['value' => $this->customValue($meta->get($name)->get('value'), $value)];
             }
             $data['metaFields'] = $values;
         }
@@ -135,8 +158,10 @@ final class EntityForms
     }
 
     /**
-     * Required custom fields left empty. Kimai's form checks these only when they are submitted, which a partial
-     * submission leaves out; its edit page always submits them, so it refuses a save without them.
+     * Required custom fields left empty that the person can fill in. Kimai's form checks these only when they are
+     * submitted, which a partial submission leaves out; its edit page always submits them, so it refuses a save
+     * without them. One that is locked or hidden for the person is not submitted by the edit page either, so it saves
+     * without it, and so do these tools.
      *
      * @return list<string>
      */
@@ -149,7 +174,7 @@ final class EntityForms
         $missing = [];
         foreach ($form->get('metaFields') as $name => $child) {
             $field = $entity->getMetaField((string) $name);
-            if ($field !== null && $field->isRequired() && \in_array($field->getValue(), [null, ''], true)) {
+            if ($field !== null && $field->isRequired() && $field->isVisible() && !$child->get('value')->isDisabled() && \in_array($field->getValue(), [null, ''], true)) {
                 $missing[] = (string) $name;
             }
         }
@@ -237,7 +262,8 @@ final class EntityForms
             throw new ToolException(\sprintf('Kimai does not let you change %s here.', $arg));
         }
         $value = $this->formValue($value, $kind);
-        if ($value === '' && !$this->mayBeEmpty($form->getData(), $name)) {
+        // Kimai's text fields trim what they are given, so only spaces is empty too
+        if (trim($value) === '' && !$this->mayBeEmpty($form->getData(), $name)) {
             // an empty text reaches the entity as null, which a setter such as setName() or setCountry() does not
             // take: the form would throw rather than report it
             throw new ToolException(\sprintf('Kimai would refuse this: %s cannot be empty.', $arg));
@@ -285,6 +311,49 @@ final class EntityForms
             self::BUDGET_TYPE => 'Setting the budget type needs Kimai\'s budget or time budget permission for it, which you do not have.',
             default => \sprintf('Kimai does not let you set %s here.', $arg),
         };
+    }
+
+    /**
+     * A custom field's submitted value. A date field reads dates in the person's locale format, like Kimai's own
+     * date fields; the tools take them as YYYY-MM-DD, so a date is written out the way that field reads it.
+     */
+    private function customValue(FormInterface $field, mixed $value): string
+    {
+        $text = $this->formValue($value, \is_bool($value) ? self::BOOL : self::TEXT);
+        $format = match (true) {
+            $this->isOfType($field, DateTimeType::class) => 'Y-m-d H:i',
+            $this->isOfType($field, DateType::class) => 'Y-m-d',
+            default => null,
+        };
+        if ($format === null) {
+            return $text;
+        }
+        $timezone = $field->getConfig()->getOption('model_timezone');
+        $date = \DateTime::createFromFormat('!' . $format, $text, new \DateTimeZone(\is_string($timezone) ? $timezone : date_default_timezone_get()));
+        // anything else, an impossible date included, goes to the form as given, which refuses it by name
+        if ($date === false || $date->format($format) !== $text) {
+            return $text;
+        }
+        $view = $date;
+        foreach ($field->getConfig()->getViewTransformers() as $transformer) {
+            $view = $transformer->transform($view);
+        }
+
+        return \is_string($view) ? $view : $text;
+    }
+
+    /**
+     * @param class-string $type
+     */
+    private function isOfType(FormInterface $field, string $type): bool
+    {
+        for ($resolved = $field->getConfig()->getType(); $resolved !== null; $resolved = $resolved->getParent()) {
+            if ($resolved->getInnerType() instanceof $type) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function formValue(mixed $value, string $kind): string

@@ -15,11 +15,13 @@ use App\Entity\Customer;
 use App\Entity\Project;
 use App\Entity\ProjectMeta;
 use App\Form\Type\MetaFieldsCollectionType;
+use Doctrine\ORM\EntityManagerInterface;
 use KimaiPlugin\McpServerBundle\Support\EntityForms;
 use KimaiPlugin\McpServerBundle\Tests\TestUser;
 use KimaiPlugin\McpServerBundle\Tool\ToolException;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Form\Extension\Core\Type\ChoiceType;
+use Symfony\Component\Form\Extension\Core\Type\DateType;
 use Symfony\Component\Form\Extension\Core\Type\FormType;
 use Symfony\Component\Form\Extension\Core\Type\NumberType;
 use Symfony\Component\Form\Extension\Core\Type\TextType;
@@ -140,6 +142,54 @@ final class EntityFormsTest extends TestCase
         $this->forms()->submit($this->form($this->project()), self::FIELDS, ['name' => ''], 'Projects');
     }
 
+    public function testANameOfOnlySpacesIsRefusedByName(): void
+    {
+        $this->expectException(ToolException::class);
+        $this->expectExceptionMessage('Kimai would refuse this: name cannot be empty.');
+
+        $this->forms()->submit($this->form($this->project()), self::FIELDS, ['name' => '   '], 'Projects');
+    }
+
+    public function testARequiredCustomFieldThePersonCannotSetDoesNotBlockTheirChanges(): void
+    {
+        $project = $this->project();
+        $project->getMetaField('entity')?->setIsRequired(true);
+        $project->getMetaField('hidden')?->setIsRequired(true);
+
+        $this->forms()->submit($this->form($project), self::FIELDS, ['name' => 'Renamed'], 'Projects');
+
+        $this->assertSame('Renamed', $project->getName());
+    }
+
+    public function testACustomDateIsTakenAsIsoWhateverFormatTheFieldReads(): void
+    {
+        $project = $this->project();
+        $project->setMetaField($this->meta('ordered', DateType::class, ['widget' => 'single_text', 'html5' => false, 'format' => 'dd.MM.yyyy', 'input' => 'string']));
+
+        $this->forms()->submit($this->form($project), self::FIELDS, ['custom_fields' => ['ordered' => '2026-11-17']], 'Projects');
+        $this->assertSame('2026-11-17', $project->getMetaField('ordered')?->getValue());
+
+        $this->expectException(ToolException::class);
+        $this->expectExceptionMessage('custom field "ordered"');
+        $this->forms()->submit($this->form($project), self::FIELDS, ['custom_fields' => ['ordered' => '2026-02-31']], 'Projects');
+    }
+
+    public function testForgettingLetsGoOfTheEntityAndItsCustomFields(): void
+    {
+        $project = $this->project();
+        $entities = $this->createMock(EntityManagerInterface::class);
+        $entities->method('contains')->willReturn(true);
+        $detached = [];
+        $entities->method('detach')->willReturnCallback(static function (object $entity) use (&$detached): void {
+            $detached[] = $entity;
+        });
+
+        (new EntityForms($this->factory(), $this->createStub(AuthorizationCheckerInterface::class), $entities))->forget($project);
+
+        $this->assertCount(5, $detached);
+        $this->assertSame($project, end($detached));
+    }
+
     public function testAnAddressIsSplitIntoKimaisThreeLines(): void
     {
         $customer = new Customer('Acme');
@@ -178,7 +228,7 @@ final class EntityFormsTest extends TestCase
 
     private function forms(): EntityForms
     {
-        return new EntityForms($this->factory(), $this->createStub(AuthorizationCheckerInterface::class));
+        return new EntityForms($this->factory(), $this->createStub(AuthorizationCheckerInterface::class), $this->createStub(EntityManagerInterface::class));
     }
 
     private function factory(): FormFactoryInterface

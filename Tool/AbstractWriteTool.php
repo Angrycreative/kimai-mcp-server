@@ -82,6 +82,7 @@ abstract class AbstractWriteTool implements ToolInterface
      */
     private function preview(WritePlan $plan, string $token, ?string $reason = null): array
     {
+        $plan->discard();
         $preview = ['preview' => true];
         if ($reason !== null) {
             $preview['not_done'] = $reason;

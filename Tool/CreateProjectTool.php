@@ -67,6 +67,11 @@ final class CreateProjectTool extends AbstractWriteTool
         if (!$customer instanceof Customer || !$this->auth->isGranted('view', $customer)) {
             throw new ToolException('No customer with that ID that you can see.');
         }
+        // Kimai's form would take an archived customer it is handed (it keeps an existing project's own customer
+        // selectable that way), but its "Create project" page only offers visible ones
+        if (!$customer->isVisible()) {
+            throw new ToolException(\sprintf('%s is archived, so Kimai does not take new projects for it. Make it visible in Kimai first.', $customer->getName()));
+        }
 
         $fields = EntityArguments::projectFields();
         $project = $this->projects->createNewProject($customer);
@@ -74,7 +79,8 @@ final class CreateProjectTool extends AbstractWriteTool
 
         $summary = ['create_project' => $this->forms->describeSet($project, $fields, $user)];
         $namesake = $this->projectRepository->findOneBy(['customer' => $customer, 'name' => $project->getName()]);
-        if ($namesake !== null) {
+        // only named when the person may see it, so the check cannot be used to find projects they may not see
+        if ($namesake !== null && $this->auth->isGranted('view', $namesake)) {
             $summary['warning'] = \sprintf('%s already has a project called "%s" (ID %d). Make sure the person wants a second one.', $customer->getName(), $project->getName(), $namesake->getId());
         }
 

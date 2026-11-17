@@ -67,21 +67,27 @@ final class UpdateCustomerTool extends AbstractWriteTool
             throw new ToolException('No customer with that ID that you may edit.');
         }
 
-        $fields = EntityArguments::customerFields();
-        $this->customers->loadMetaFields($customer);
-        $before = $this->forms->describe($customer, $fields, $user);
-        $this->forms->submit($this->forms->customerForm($customer), $fields, $arguments, 'Customers');
-        $changes = $this->forms->changes($before, $this->forms->describe($customer, $fields, $user));
-        if ($changes === []) {
-            throw new ToolException(\sprintf('Nothing to change: "%s" already looks like that.', $customer->getName()));
-        }
+        try {
+            $fields = EntityArguments::customerFields();
+            $this->customers->loadMetaFields($customer);
+            $before = $this->forms->describe($customer, $fields, $user);
+            $this->forms->submit($this->forms->customerForm($customer), $fields, $arguments, 'Customers');
+            $changes = $this->forms->changes($before, $this->forms->describe($customer, $fields, $user));
+            if ($changes === []) {
+                throw new ToolException(\sprintf('Nothing to change: "%s" already looks like that.', $customer->getName()));
+            }
 
-        $summary = ['update_customer' => ['id' => $customer->getId(), 'name' => $before['name']], 'changes' => $changes];
+            $summary = ['update_customer' => ['id' => $customer->getId(), 'name' => $before['name']], 'changes' => $changes];
+        } catch (\Throwable $e) {
+            $this->forms->forget($customer);
+
+            throw $e;
+        }
 
         return new WritePlan($summary, function () use ($customer, $summary): array {
             $this->customers->saveCustomer($customer);
 
             return ['updated' => $summary['update_customer'], 'changes' => $summary['changes'], ToolHandlerAdapter::CHANGED => ['customer:' . $customer->getId()]];
-        });
+        }, fn () => $this->forms->forget($customer));
     }
 }

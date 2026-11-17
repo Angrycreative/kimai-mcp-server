@@ -67,24 +67,30 @@ final class UpdateProjectTool extends AbstractWriteTool
             throw new ToolException('No project with that ID that you may edit.');
         }
 
-        $fields = EntityArguments::projectFields();
-        $this->projects->loadMetaFields($project);
-        $before = $this->forms->describe($project, $fields, $user);
-        $this->forms->submit($this->forms->projectForm($project, $user), $fields, $arguments, 'Projects');
-        $changes = $this->forms->changes($before, $this->forms->describe($project, $fields, $user));
-        if ($changes === []) {
-            throw new ToolException(\sprintf('Nothing to change: "%s" already looks like that.', $project->getName()));
-        }
+        try {
+            $fields = EntityArguments::projectFields();
+            $this->projects->loadMetaFields($project);
+            $before = $this->forms->describe($project, $fields, $user);
+            $this->forms->submit($this->forms->projectForm($project, $user), $fields, $arguments, 'Projects');
+            $changes = $this->forms->changes($before, $this->forms->describe($project, $fields, $user));
+            if ($changes === []) {
+                throw new ToolException(\sprintf('Nothing to change: "%s" already looks like that.', $project->getName()));
+            }
 
-        $summary = ['update_project' => ['id' => $project->getId(), 'name' => $before['name']], 'changes' => $changes];
-        if (isset($changes['customer'])) {
-            $summary['warning'] = 'All time logged on the project moves to the new customer with it, invoiced time included, and so do its budgets, which are in the customer\'s currency.';
+            $summary = ['update_project' => ['id' => $project->getId(), 'name' => $before['name']], 'changes' => $changes];
+            if (isset($changes['customer'])) {
+                $summary['warning'] = 'All time logged on the project moves to the new customer with it, invoiced time included, and so do its budgets, which are in the customer\'s currency.';
+            }
+        } catch (\Throwable $e) {
+            $this->forms->forget($project);
+
+            throw $e;
         }
 
         return new WritePlan($summary, function () use ($project, $summary): array {
             $this->projects->saveProject($project);
 
             return ['updated' => $summary['update_project'], 'changes' => $summary['changes'], ToolHandlerAdapter::CHANGED => ['project:' . $project->getId()]];
-        });
+        }, fn () => $this->forms->forget($project));
     }
 }

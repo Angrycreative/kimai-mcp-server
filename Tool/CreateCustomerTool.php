@@ -19,6 +19,7 @@ use KimaiPlugin\McpServerBundle\Support\Args;
 use KimaiPlugin\McpServerBundle\Support\EntityArguments;
 use KimaiPlugin\McpServerBundle\Support\EntityForms;
 use KimaiPlugin\McpServerBundle\Support\Schema;
+use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
 
 /**
  * Creates a customer through Kimai's own customer form (EntityForms), as Kimai's "Create customer" page does.
@@ -29,6 +30,7 @@ final class CreateCustomerTool extends AbstractWriteTool
         private readonly CustomerRepository $repository,
         private readonly CustomerService $customers,
         private readonly EntityForms $forms,
+        private readonly AuthorizationCheckerInterface $auth,
     ) {
     }
 
@@ -68,7 +70,8 @@ final class CreateCustomerTool extends AbstractWriteTool
 
         $summary = ['create_customer' => $this->forms->describeSet($customer, $fields, $user)];
         $namesake = $this->repository->findOneBy(['name' => $customer->getName()]);
-        if ($namesake !== null) {
+        // only named when the person may see it, so the check cannot be used to find customers they may not see
+        if ($namesake !== null && $this->auth->isGranted('view', $namesake)) {
             $summary['warning'] = \sprintf('There is already a customer called "%s" (ID %d). Make sure the person wants a second one.', $customer->getName(), $namesake->getId());
         }
 

@@ -56,7 +56,7 @@ final class EntityArguments
             'billable' => ['type' => 'boolean', 'description' => 'Whether time on it is billable by default' . ($update ? '' : ' (default: yes)')],
             'global_activities' => ['type' => 'boolean', 'description' => 'Whether global activities can be used on it' . ($update ? '' : ' (default: yes)')],
             ...self::budgetSchema(),
-            'custom_fields' => Schema::customFields('Custom field values by field name, such as the company entity'),
+            'custom_fields' => Schema::customFields('Custom field values by field name, such as the company entity; dates as YYYY-MM-DD'),
         ];
     }
 
@@ -121,7 +121,7 @@ final class EntityArguments
             'buyer_reference' => self::text('Buyer reference for e-invoices'),
             'billable' => ['type' => 'boolean', 'description' => 'Whether time for it is billable by default' . ($update ? '' : ' (default: yes)')],
             ...self::budgetSchema(),
-            'custom_fields' => Schema::customFields('Custom field values by field name, such as the YouTrack key or billing references'),
+            'custom_fields' => Schema::customFields('Custom field values by field name, such as the YouTrack key or billing references; dates as YYYY-MM-DD'),
         ];
     }
 

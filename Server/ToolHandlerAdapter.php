@@ -53,8 +53,12 @@ final class ToolHandlerAdapter implements ToolHandlerInterface
 
         try {
             $result = $this->tool->call($arguments, $this->user);
-            if ($transaction) {
+            // only a confirmed change is kept: working out a preview can touch the database too (Kimai's tag field
+            // saves a new tag as soon as its form is submitted), and a preview has to leave nothing behind
+            if ($transaction && ($result['done'] ?? false) === true) {
                 $this->connection->commit();
+            } else {
+                $this->rollBack($transaction);
             }
         } catch (ToolException $e) {
             $this->rollBack($transaction);
